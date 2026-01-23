@@ -1,0 +1,165 @@
+/**
+ * Batch mode implementation for miriad-code
+ *
+ * Runs the agent with a single prompt and outputs the response.
+ * With --verbose, shows memory state and execution trace on stderr.
+ */
+
+import { createStorage, initializeDefaultEntries, type Storage } from "../storage"
+import { runAgent, type AgentEvent } from "../agent"
+import { VerboseOutput, type MemoryStats, type TokenBudget } from "./verbose"
+import { Config } from "../config"
+
+export interface BatchOptions {
+  prompt: string
+  verbose: boolean
+  dbPath: string
+  format: "text" | "json"
+}
+
+/**
+ * Estimate token count from text.
+ */
+function estimateTokens(text: string): number {
+  return Math.ceil(text.length / 4)
+}
+
+/**
+ * Gather memory statistics for verbose output.
+ */
+async function getMemoryStats(storage: Storage): Promise<MemoryStats> {
+  const messages = await storage.temporal.getMessages()
+  const summaries = await storage.temporal.getSummaries()
+  const uncompactedTokens = await storage.temporal.estimateUncompactedTokens()
+  const config = Config.get()
+
+  // Get LTM stats
+  const ltmEntries = await storage.ltm.glob("/**")
+  const identity = await storage.ltm.read("identity")
+  const behavior = await storage.ltm.read("behavior")
+
+  return {
+    totalMessages: messages.length,
+    totalSummaries: summaries.length,
+    uncompactedTokens,
+    temporalBudget: config.tokenBudgets.compactionThreshold,
+    ltmEntries: ltmEntries.length,
+    identityTokens: identity ? estimateTokens(identity.body) : 0,
+    behaviorTokens: behavior ? estimateTokens(behavior.body) : 0,
+  }
+}
+
+/**
+ * Calculate token budget for verbose output.
+ */
+function calculateTokenBudget(stats: MemoryStats): TokenBudget {
+  const config = Config.get()
+  const total = config.tokenBudgets.mainAgentContext
+
+  // Rough estimates for system components
+  const systemPrompt = 500 // Base instructions
+  const identity = stats.identityTokens
+  const behavior = stats.behaviorTokens
+  const temporalView = Math.min(stats.uncompactedTokens, config.tokenBudgets.temporalBudget)
+  const present = 200 // Mission/status/tasks
+  const tools = 2000 // Tool descriptions
+
+  const used = systemPrompt + identity + behavior + temporalView + present + tools
+
+  return {
+    total,
+    systemPrompt,
+    identity,
+    behavior,
+    temporalView,
+    present,
+    tools,
+    used,
+    available: total - used,
+  }
+}
+
+/**
+ * Run the agent in batch mode.
+ */
+export async function runBatch(options: BatchOptions): Promise<void> {
+  const verbose = new VerboseOutput(options.verbose)
+
+  let storage: Storage | undefined
+
+  try {
+    // Initialize storage
+    storage = createStorage(options.dbPath)
+    await initializeDefaultEntries(storage)
+
+    // Get initial memory state for verbose output
+    const statsBefore = await getMemoryStats(storage)
+    const presentBefore = await storage.present.get()
+
+    if (options.verbose) {
+      verbose.memoryStateBefore(statsBefore, presentBefore)
+      verbose.tokenBudget(calculateTokenBudget(statsBefore))
+      verbose.executionStart()
+    }
+
+    // Run the agent
+    const events: AgentEvent[] = []
+
+    const result = await runAgent(options.prompt, {
+      storage,
+      verbose: options.verbose,
+      onEvent: (event) => {
+        events.push(event)
+        if (options.verbose) {
+          verbose.event({
+            type: event.type as "user" | "assistant" | "tool_call" | "tool_result" | "error",
+            content: event.content,
+          })
+        }
+      },
+    })
+
+    // Get final memory state for verbose output
+    if (options.verbose) {
+      const statsAfter = await getMemoryStats(storage)
+      const presentAfter = await storage.present.get()
+      verbose.memoryStateAfter(statsAfter, presentAfter, result.usage)
+    }
+
+    // Output the response
+    if (options.format === "json") {
+      const output = {
+        response: result.response,
+        usage: result.usage,
+        events: events.map((e) => ({
+          type: e.type,
+          content: e.content,
+          ...(e.toolName && { toolName: e.toolName }),
+          ...(e.toolCallId && { toolCallId: e.toolCallId }),
+        })),
+      }
+      console.log(JSON.stringify(output, null, 2))
+    } else {
+      console.log(result.response)
+    }
+  } catch (error) {
+    const err = error as Error
+
+    // Handle specific error types
+    if (err.message?.includes("API") || err.message?.includes("rate limit") || err.message?.includes("429")) {
+      verbose.error("API request failed", err)
+      console.error(`Error: API request failed - ${err.message}`)
+    } else if (err.message?.includes("ENOENT") || err.message?.includes("EACCES")) {
+      verbose.error("File system error", err)
+      console.error(`Error: File system error - ${err.message}`)
+    } else if (err.message?.includes("database") || err.message?.includes("SQLite")) {
+      verbose.error("Database error", err)
+      console.error(`Error: Database error - ${err.message}`)
+    } else {
+      verbose.error("Unexpected error", err)
+      console.error(`Error: ${err.message}`)
+    }
+
+    process.exit(1)
+  }
+}
