@@ -297,11 +297,9 @@ Your task: Review the conversation below and decide if any information should be
   prompt += `\n## Instructions
 1. Review the conversation for durable knowledge worth retaining
 2. Use ltm_read(path) to check existing entries before updating
-3. Use ltm_create(slug, parentSlug, title, body) to add new knowledge - ALL fields are required:
-   - slug: unique identifier (e.g., "user-prefers-typescript")
-   - parentSlug: parent entry or null for root (use "knowledge" for general knowledge)
-   - title: human-readable title
-   - body: the actual knowledge content to store (REQUIRED - do not omit)
+3. Use ltm_create to add new knowledge. Example:
+   ltm_create({"slug": "user-prefers-typescript", "parentSlug": "knowledge", "title": "User Prefers TypeScript", "body": "The user prefers TypeScript over JavaScript for all new projects."})
+   ALL fields including "body" are REQUIRED.
 4. Use ltm_update(slug, newBody, expectedVersion) to modify existing entries
 5. Be selective - only extract truly valuable, long-lasting information
 6. Call finish_consolidation(summary) when done (even if no changes were made)
