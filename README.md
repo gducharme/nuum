@@ -16,15 +16,81 @@ miriad-code is designed for extended coding sessions where context preservation 
 
 ## Usage
 
+### Basic Execution
+
 ```bash
-# Basic usage
-miriad-code -p "What files are in src/"
+# Simple prompt
+miriad-code -p "What is 2+2?"
 
-# With verbose debugging output
+# Execute shell commands
+miriad-code -p "List all TypeScript files in the src directory"
+
+# Read and analyze files
+miriad-code -p "Read src/index.ts and explain what it does"
+```
+
+### Verbose Mode
+
+```bash
+# Show memory state, token budget, and execution trace
 miriad-code -p "Refactor the auth module" --verbose
+```
 
-# Specify database path
-miriad-code -p "Hello" --db=./my-agent.db
+Verbose output shows:
+- Memory state before/after (present, temporal, LTM)
+- Token budget breakdown
+- Execution trace with timestamps
+- Cost estimate
+
+### Persistent Memory (Multi-turn)
+
+The agent remembers across invocations when using the same database:
+
+```bash
+# First invocation - store information
+miriad-code -p "Remember: my favorite color is blue" --db=./session.db
+
+# Second invocation - recall information
+miriad-code -p "What is my favorite color?" --db=./session.db
+# Agent will recall: "Your favorite color is blue"
+```
+
+### Output Formats
+
+```bash
+# Plain text output (default)
+miriad-code -p "Summarize README.md"
+
+# JSON output with events and usage stats
+miriad-code -p "List todos" --format=json
+```
+
+### Database Path
+
+```bash
+# Default: ./agent.db
+miriad-code -p "Hello"
+
+# Custom path
+miriad-code -p "Hello" --db=/path/to/my-agent.db
+
+# In-memory (no persistence)
+miriad-code -p "Hello" --db=:memory:
+```
+
+### CLI Reference
+
+```
+miriad-code -p "prompt"           Run agent with a prompt
+miriad-code -p "prompt" --verbose Show debug output
+miriad-code --help                Show help
+
+Options:
+  -p, --prompt <text>   The prompt to send (required)
+  -v, --verbose         Show memory state, token usage, execution trace
+      --db <path>       SQLite database path (default: ./agent.db)
+      --format <type>   Output format: text or json (default: text)
+  -h, --help            Show help message
 ```
 
 ## Development
@@ -45,15 +111,18 @@ bun run build
 
 ## Configuration
 
-Phase 1 uses environment variables:
+Only `ANTHROPIC_API_KEY` is required. All other settings have sensible defaults:
 
 ```bash
+# Required
+ANTHROPIC_API_KEY=your-key-here
+
+# Optional (defaults shown)
 AGENT_PROVIDER=anthropic
 AGENT_MODEL_REASONING=claude-opus-4-5-20251101
 AGENT_MODEL_WORKHORSE=claude-sonnet-4-5-20250929
 AGENT_MODEL_FAST=claude-haiku-4-5-20251001
 AGENT_DB=./agent.db
-ANTHROPIC_API_KEY=your-key-here
 ```
 
 ## Acknowledgments
