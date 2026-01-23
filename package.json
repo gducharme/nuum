@@ -17,8 +17,10 @@
   "dependencies": {
     "@ai-sdk/anthropic": "^1.1.0",
     "@anthropic-ai/sdk": "^0.39.0",
+    "@types/diff": "^7.0.2",
     "ai": "^4.1.0",
     "better-sqlite3": "^12.6.2",
+    "diff": "^8.0.3",
     "drizzle-orm": "^0.38.0",
     "ulid": "^2.3.0",
     "zod": "^3.24.0"

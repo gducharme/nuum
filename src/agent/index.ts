@@ -24,7 +24,7 @@ import { Provider } from "../provider"
 import { Config } from "../config"
 import type { Storage, Task } from "../storage"
 import { Identifier } from "../id"
-import { Tool, BashTool, ReadTool } from "../tool"
+import { Tool, BashTool, ReadTool, EditTool, WriteTool, GlobTool, GrepTool } from "../tool"
 
 const MAX_TURNS = 50
 
@@ -147,7 +147,7 @@ The following is your memory of previous interactions with this user:
 `
 
   // Add available tools description
-  prompt += `You have access to tools for file operations (read, bash).
+  prompt += `You have access to tools for file operations (read, write, edit, bash, glob, grep).
 Use tools to accomplish tasks. Always explain what you're doing.
 
 When you're done with a task, update the present state if appropriate.
@@ -172,6 +172,30 @@ function buildTools(): Record<string, CoreTool> {
   tools.read = tool({
     description: ReadTool.definition.description,
     parameters: ReadTool.definition.parameters,
+  })
+
+  // Write tool
+  tools.write = tool({
+    description: WriteTool.definition.description,
+    parameters: WriteTool.definition.parameters,
+  })
+
+  // Edit tool
+  tools.edit = tool({
+    description: EditTool.definition.description,
+    parameters: EditTool.definition.parameters,
+  })
+
+  // Glob tool
+  tools.glob = tool({
+    description: GlobTool.definition.description,
+    parameters: GlobTool.definition.parameters,
+  })
+
+  // Grep tool
+  tools.grep = tool({
+    description: GrepTool.definition.description,
+    parameters: GrepTool.definition.parameters,
   })
 
   // Present state tools
@@ -230,6 +254,22 @@ async function executeTool(
     }
     case "read": {
       const result = await ReadTool.definition.execute(args as z.infer<typeof ReadTool.definition.parameters>, ctx)
+      return result.output
+    }
+    case "write": {
+      const result = await WriteTool.definition.execute(args as z.infer<typeof WriteTool.definition.parameters>, ctx)
+      return result.output
+    }
+    case "edit": {
+      const result = await EditTool.definition.execute(args as z.infer<typeof EditTool.definition.parameters>, ctx)
+      return result.output
+    }
+    case "glob": {
+      const result = await GlobTool.definition.execute(args as z.infer<typeof GlobTool.definition.parameters>, ctx)
+      return result.output
+    }
+    case "grep": {
+      const result = await GrepTool.definition.execute(args as z.infer<typeof GrepTool.definition.parameters>, ctx)
       return result.output
     }
     case "present_set_mission": {
