@@ -71,7 +71,6 @@ export { createMockLLM, type MockLLM, type MockLLMConfig, type MockSummaryOutput
 export {
   runCompaction,
   runCompactionWorker,
-  createSummarizationLLM,
   type CompactionResult,
-  type SummarizationLLM,
+  type CompactionConfig as AgentCompactionConfig,
 } from "./compaction-agent"

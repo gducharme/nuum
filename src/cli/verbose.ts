@@ -221,26 +221,18 @@ export class VerboseOutput {
   compaction(result: CompactionResult): void {
     this.separator("COMPACTION")
 
-    this.log(`Summaries created:`)
-    this.log(`  Order-1: ${result.order1Created}`)
-    if (result.higherOrderCreated > 0) {
-      this.log(`  Higher-order: ${result.higherOrderCreated}`)
-    }
+    this.log(`Summaries created: ${result.summariesCreated}`)
+    this.log(`Agent turns used: ${result.turnsUsed}`)
 
+    const tokensCompressed = result.tokensBefore - result.tokensAfter
     this.log(`\nTokens:`)
-    this.log(`  Compressed: ${result.tokensCompressed.toLocaleString()}`)
-    this.log(`  Remaining: ${result.tokensAfter.toLocaleString()}`)
+    this.log(`  Before: ${result.tokensBefore.toLocaleString()}`)
+    this.log(`  After: ${result.tokensAfter.toLocaleString()}`)
+    this.log(`  Compressed: ${tokensCompressed.toLocaleString()}`)
 
-    const ratio = result.tokensCompressed > 0
-      ? (result.tokensCompressed / (result.tokensCompressed + result.tokensAfter) * 100).toFixed(1)
+    const ratio = tokensCompressed > 0
+      ? (tokensCompressed / result.tokensBefore * 100).toFixed(1)
       : "0.0"
     this.log(`  Compression: ${ratio}%`)
-
-    if (result.warnings.length > 0) {
-      this.log(`\nWarnings:`)
-      for (const warning of result.warnings) {
-        this.log(`  ⚠ ${warning}`)
-      }
-    }
   }
 }

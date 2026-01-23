@@ -42,7 +42,6 @@ import {
   reconstructHistoryAsTurns,
   shouldTriggerCompaction,
   runCompactionWorker,
-  createSummarizationLLM,
   getMessagesToCompact,
   type CompactionResult,
 } from "../temporal"
@@ -677,27 +676,26 @@ async function maybeRunCompaction(
     })
   }
 
-  // Phase 2: Run compaction (lossy summarization)
+  // Phase 2: Run compaction (agentic summarization)
   try {
-    const llm = createSummarizationLLM()
     const result = await runCompactionWorker(
       storage,
-      llm,
       {
         compactionThreshold: config.tokenBudgets.compactionThreshold,
         compactionTarget: config.tokenBudgets.compactionTarget,
       },
     )
 
+    const tokensCompressed = result.tokensBefore - result.tokensAfter
     log.info("compaction complete", {
-      order1Created: result.order1Created,
-      higherOrderCreated: result.higherOrderCreated,
-      tokensCompressed: result.tokensCompressed,
+      summariesCreated: result.summariesCreated,
+      tokensCompressed,
+      turnsUsed: result.turnsUsed,
     })
 
     onEvent?.({
       type: "compaction",
-      content: `Compacted ${result.tokensCompressed} tokens (${result.order1Created} order-1, ${result.higherOrderCreated} higher-order summaries)`,
+      content: `Compacted ${tokensCompressed} tokens (${result.summariesCreated} summaries created in ${result.turnsUsed} turns)`,
       compactionResult: result,
     })
 

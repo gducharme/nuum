@@ -137,8 +137,11 @@ export function buildTemporalView(options: BuildTemporalViewOptions): TemporalVi
  * model can understand natively, rather than serializing everything into
  * the system prompt.
  *
+ * Messages include their ULID as a prefix (e.g., [id:msg-xxx]) to enable
+ * the compaction agent to reference specific ranges when creating summaries.
+ *
  * Summaries are inserted as system messages at the appropriate position
- * in the conversation flow.
+ * in the conversation flow, with their range visible (from/to IDs).
  */
 export function reconstructHistoryAsTurns(view: TemporalView): CoreMessage[] {
   const turns: CoreMessage[] = []
@@ -158,9 +161,9 @@ export function reconstructHistoryAsTurns(view: TemporalView): CoreMessage[] {
     const messageKey = message?.id
 
     if (summaryKey && (!messageKey || summaryKey < messageKey)) {
-      // Insert summary as a system message
+      // Insert summary as a system message with range IDs visible
       const observations = JSON.parse(summary.keyObservations) as string[]
-      let summaryContent = `[Summary of earlier conversation]\n${summary.narrative}`
+      let summaryContent = `[summary from:${summary.startId} to:${summary.endId}]\n${summary.narrative}`
       if (observations.length > 0) {
         summaryContent += "\n\nKey points:\n" + observations.map(o => `- ${o}`).join("\n")
       }
@@ -191,8 +194,17 @@ export function reconstructHistoryAsTurns(view: TemporalView): CoreMessage[] {
 }
 
 /**
+ * Format message content with ID prefix.
+ * The ID prefix allows the compaction agent to reference specific messages.
+ */
+function formatWithId(id: string, content: string): string {
+  return `[id:${id}] ${content}`
+}
+
+/**
  * Process a message and potentially following related messages into CoreMessage turns.
  * Groups tool_call + tool_result sequences together.
+ * All messages include their ULID as a prefix for compaction agent reference.
  */
 function processMessageForTurn(
   message: TemporalMessage,
@@ -203,7 +215,7 @@ function processMessageForTurn(
 
   switch (message.type) {
     case "user":
-      turns.push({ role: "user", content: message.content })
+      turns.push({ role: "user", content: formatWithId(message.id, message.content) })
       return { turns, nextIdx: currentIdx + 1 }
 
     case "assistant": {
@@ -211,10 +223,12 @@ function processMessageForTurn(
       const toolCalls: ToolCallPart[] = []
       const toolResults: ToolResultPart[] = []
       let nextIdx = currentIdx + 1
+      let lastMessageId = message.id
 
       // Look ahead for tool_call messages
       while (nextIdx < allMessages.length && allMessages[nextIdx].type === "tool_call") {
         const toolCallMsg = allMessages[nextIdx]
+        lastMessageId = toolCallMsg.id
         try {
           const parsed = JSON.parse(toolCallMsg.content) as { name: string; args: unknown; toolCallId?: string }
           toolCalls.push({
@@ -232,6 +246,7 @@ function processMessageForTurn(
       // Look ahead for corresponding tool_result messages
       while (nextIdx < allMessages.length && allMessages[nextIdx].type === "tool_result") {
         const toolResultMsg = allMessages[nextIdx]
+        lastMessageId = toolResultMsg.id
         const correspondingCall = toolCalls[toolResults.length]
         if (correspondingCall) {
           toolResults.push({
@@ -245,10 +260,15 @@ function processMessageForTurn(
       }
 
       if (toolCalls.length > 0) {
-        // Assistant message with tool calls
+        // Assistant message with tool calls - prefix with ID range
         const assistantContent: (ToolCallPart | { type: "text"; text: string })[] = []
+        const idPrefix = message.id === lastMessageId
+          ? `[id:${message.id}]`
+          : `[id:${message.id}...${lastMessageId}]`
         if (message.content) {
-          assistantContent.push({ type: "text", text: message.content })
+          assistantContent.push({ type: "text", text: `${idPrefix} ${message.content}` })
+        } else {
+          assistantContent.push({ type: "text", text: idPrefix })
         }
         assistantContent.push(...toolCalls)
 
@@ -268,7 +288,7 @@ function processMessageForTurn(
         }
       } else {
         // Simple assistant message without tools
-        turns.push({ role: "assistant", content: message.content })
+        turns.push({ role: "assistant", content: formatWithId(message.id, message.content) })
       }
 
       return { turns, nextIdx }
@@ -284,7 +304,7 @@ function processMessageForTurn(
       // System messages become user messages with [SYSTEM:] prefix
       turns.push({
         role: "user",
-        content: `[SYSTEM: ${message.content}]`,
+        content: `[SYSTEM: ${formatWithId(message.id, message.content)}]`,
       })
       turns.push({
         role: "assistant",

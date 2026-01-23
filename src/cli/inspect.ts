@@ -1,15 +1,17 @@
 /**
  * Inspect commands for miriad-code
  *
- * --inspect: Shows memory stats (temporal, present, LTM) with token counts
- * --dump: Shows the raw system prompt that would be sent to the LLM
+ * --inspect: Shows LTM tree structure + memory stats
+ * --dump: Shows the system prompt + conversation turns as they would appear to the agent
  *
  * Both commands work without API key (no LLM calls).
  */
 
 import { createStorage, initializeDefaultEntries, type Storage } from "../storage"
-import { buildTemporalView, renderTemporalView } from "../temporal"
+import { buildTemporalView, reconstructHistoryAsTurns } from "../temporal"
+import { buildSystemPrompt, buildConversationHistory } from "../agent"
 import { Config } from "../config"
+import type { CoreMessage } from "ai"
 
 const SEPARATOR = "═".repeat(70)
 const SUBSEPARATOR = "─".repeat(70)
@@ -22,12 +24,94 @@ function estimateTokens(text: string): number {
   return Math.ceil(text.length / 4)
 }
 
+/**
+ * Format a number with thousand separators.
+ */
+function fmt(n: number): string {
+  return n.toLocaleString()
+}
+
+interface LTMTreeNode {
+  slug: string
+  path: string
+  title: string | null
+  body: string
+  parentSlug: string | null
+  children: LTMTreeNode[]
+  archived: boolean
+  tokens: number
+}
+
+/**
+ * Build a tree structure from LTM entries.
+ */
+async function buildLTMTree(storage: Storage): Promise<LTMTreeNode[]> {
+  const entries = await storage.ltm.glob("/**")
+  const nodeMap = new Map<string, LTMTreeNode>()
+
+  // First pass: create all nodes
+  for (const entry of entries) {
+    nodeMap.set(entry.slug, {
+      slug: entry.slug,
+      path: entry.path,
+      title: entry.title,
+      body: entry.body,
+      parentSlug: entry.parentSlug,
+      children: [],
+      archived: !!entry.archivedAt,
+      tokens: estimateTokens(entry.body),
+    })
+  }
+
+  // Second pass: link children to parents
+  const roots: LTMTreeNode[] = []
+  for (const node of nodeMap.values()) {
+    if (node.parentSlug && nodeMap.has(node.parentSlug)) {
+      nodeMap.get(node.parentSlug)!.children.push(node)
+    } else {
+      roots.push(node)
+    }
+  }
+
+  // Sort children by slug
+  function sortChildren(node: LTMTreeNode) {
+    node.children.sort((a, b) => a.slug.localeCompare(b.slug))
+    for (const child of node.children) {
+      sortChildren(child)
+    }
+  }
+  for (const root of roots) {
+    sortChildren(root)
+  }
+
+  return roots.sort((a, b) => a.slug.localeCompare(b.slug))
+}
+
+/**
+ * Render LTM tree as indented text.
+ */
+function renderLTMTree(nodes: LTMTreeNode[], indent: number = 0): string {
+  const lines: string[] = []
+  const prefix = "  ".repeat(indent)
+
+  for (const node of nodes) {
+    const archived = node.archived ? " [archived]" : ""
+    const title = node.title ? ` "${node.title}"` : ""
+    const tokens = node.tokens > 0 ? ` (${fmt(node.tokens)} tokens)` : ""
+    lines.push(`${prefix}/${node.slug}${title}${tokens}${archived}`)
+
+    if (node.children.length > 0) {
+      lines.push(renderLTMTree(node.children, indent + 1))
+    }
+  }
+
+  return lines.join("\n")
+}
+
 interface SummaryOrderStats {
   order: number
   count: number
   totalTokens: number
-  coveringMessages?: number
-  coveringSummaries?: number
 }
 
 interface MemoryStats {
@@ -40,6 +124,7 @@ interface MemoryStats {
   uncompactedTokens: number
   temporalBudget: number
   compactionThreshold: number
+  compactionTarget: number
   // View
   viewSummaryCount: number
   viewSummaryTokens: number
@@ -55,21 +140,21 @@ interface MemoryStats {
   tasksCompleted: number
   tasksBlocked: number
   // LTM
-  ltmEntries: number
+  ltmTotalEntries: number
   ltmActiveEntries: number
+  ltmTotalTokens: number
   identityTokens: number
   behaviorTokens: number
-  knowledgeEntries: number
-  knowledgeTokens: number
 }
 
 /**
- * Gather memory statistics for --inspect output.
+ * Gather memory statistics.
  */
 async function getMemoryStats(storage: Storage): Promise<MemoryStats> {
   const config = Config.get()
   const temporalBudget = config.tokenBudgets.temporalBudget
   const compactionThreshold = config.tokenBudgets.compactionThreshold
+  const compactionTarget = config.tokenBudgets.compactionTarget
 
   // Get temporal data
   const messages = await storage.temporal.getMessages()
@@ -98,17 +183,11 @@ async function getMemoryStats(storage: Storage): Promise<MemoryStats> {
   }
 
   for (const [order, stats] of orderMap.entries()) {
-    const orderStats: SummaryOrderStats = {
+    summariesByOrder.push({
       order,
       count: stats.count,
       totalTokens: stats.tokens,
-    }
-    if (order === 1) {
-      orderStats.coveringMessages = stats.count * 20 // Rough estimate
-    } else {
-      orderStats.coveringSummaries = stats.count * 5 // Rough estimate
-    }
-    summariesByOrder.push(orderStats)
+    })
   }
   summariesByOrder.sort((a, b) => a.order - b.order)
 
@@ -126,10 +205,7 @@ async function getMemoryStats(storage: Storage): Promise<MemoryStats> {
   const activeEntries = ltmEntries.filter(e => !e.archivedAt)
   const identity = await storage.ltm.read("identity")
   const behavior = await storage.ltm.read("behavior")
-
-  // Count knowledge entries (not identity or behavior)
-  const knowledgeEntries = activeEntries.filter(e => e.slug !== "identity" && e.slug !== "behavior")
-  const knowledgeTokens = knowledgeEntries.reduce((sum, e) => sum + estimateTokens(e.body), 0)
+  const ltmTotalTokens = ltmEntries.reduce((sum, e) => sum + estimateTokens(e.body), 0)
 
   // Calculate compression ratio
   let compressionRatio: number | null = null
@@ -146,6 +222,7 @@ async function getMemoryStats(storage: Storage): Promise<MemoryStats> {
     uncompactedTokens,
     temporalBudget,
     compactionThreshold,
+    compactionTarget,
     viewSummaryCount: view.summaries.length,
     viewSummaryTokens: view.breakdown.summaryTokens,
     viewMessageCount: view.messages.length,
@@ -158,79 +235,84 @@ async function getMemoryStats(storage: Storage): Promise<MemoryStats> {
     tasksInProgress,
     tasksCompleted,
     tasksBlocked,
-    ltmEntries: ltmEntries.length,
+    ltmTotalEntries: ltmEntries.length,
     ltmActiveEntries: activeEntries.length,
+    ltmTotalTokens,
     identityTokens: identity ? estimateTokens(identity.body) : 0,
     behaviorTokens: behavior ? estimateTokens(behavior.body) : 0,
-    knowledgeEntries: knowledgeEntries.length,
-    knowledgeTokens,
   }
 }
 
 /**
- * Format a number with thousand separators.
- */
-function fmt(n: number): string {
-  return n.toLocaleString()
-}
-
-/**
  * Run the --inspect command.
+ * Shows LTM tree + memory stats.
  */
 export async function runInspect(dbPath: string): Promise<void> {
   const storage = createStorage(dbPath)
   await initializeDefaultEntries(storage)
 
   const stats = await getMemoryStats(storage)
-  const config = Config.get()
+  const ltmTree = await buildLTMTree(storage)
+
+  console.log()
+  console.log(SEPARATOR)
+  console.log("LONG-TERM MEMORY TREE")
+  console.log(SEPARATOR)
+  console.log()
+
+  if (ltmTree.length > 0) {
+    console.log(renderLTMTree(ltmTree))
+  } else {
+    console.log("(no entries)")
+  }
+
+  console.log()
+  console.log(`Total: ${stats.ltmActiveEntries} active, ${stats.ltmTotalEntries - stats.ltmActiveEntries} archived (${fmt(stats.ltmTotalTokens)} tokens)`)
 
   console.log()
   console.log(SEPARATOR)
   console.log("TEMPORAL MEMORY")
   console.log(SEPARATOR)
   console.log()
+
   console.log(`Messages: ${fmt(stats.totalMessages)} (${fmt(stats.totalMessageTokens)} tokens)`)
-  console.log()
 
   if (stats.summariesByOrder.length > 0) {
-    console.log("Summaries:")
+    console.log(`Summaries:`)
     for (const orderStats of stats.summariesByOrder) {
-      const coverage = orderStats.order === 1
-        ? orderStats.coveringMessages ? ` (covering ~${orderStats.coveringMessages} messages)` : ""
-        : orderStats.coveringSummaries ? ` (covering ~${orderStats.coveringSummaries} order-${orderStats.order - 1} summaries)` : ""
-      console.log(`  Order-${orderStats.order}: ${orderStats.count} summaries (${fmt(orderStats.totalTokens)} tokens)${coverage}`)
+      console.log(`  Order-${orderStats.order}: ${orderStats.count} (${fmt(orderStats.totalTokens)} tokens)`)
     }
-    console.log()
   } else {
-    console.log("Summaries: none")
-    console.log()
+    console.log(`Summaries: none`)
   }
 
-  console.log("Compaction:")
+  console.log()
+  console.log(`Compaction:`)
   console.log(`  Uncompacted: ${fmt(stats.uncompactedTokens)} tokens`)
   console.log(`  Threshold: ${fmt(stats.compactionThreshold)} tokens`)
+  console.log(`  Target: ${fmt(stats.compactionTarget)} tokens`)
   const compactionPct = ((stats.uncompactedTokens / stats.compactionThreshold) * 100).toFixed(1)
-  console.log(`  Status: ${compactionPct}% of threshold`)
-  console.log()
+  console.log(`  Status: ${compactionPct}% of threshold ${stats.uncompactedTokens >= stats.compactionThreshold ? "(compaction needed)" : ""}`)
 
   if (stats.compressionRatio !== null) {
-    console.log(`Compression ratio: ${stats.compressionRatio.toFixed(1)}x`)
     console.log()
+    console.log(`Compression ratio: ${stats.compressionRatio.toFixed(1)}x`)
   }
 
-  console.log("Effective view (what goes to LLM):")
+  console.log()
+  console.log(`Effective view (what goes to agent):`)
   console.log(`  Summaries: ${stats.viewSummaryCount} (${fmt(stats.viewSummaryTokens)} tokens)`)
   console.log(`  Messages: ${stats.viewMessageCount} (${fmt(stats.viewMessageTokens)} tokens)`)
-  console.log(`  Total: ${fmt(stats.viewTotalTokens)} tokens`)
+  console.log(`  Total: ${fmt(stats.viewTotalTokens)} / ${fmt(stats.temporalBudget)} budget`)
 
   console.log()
   console.log(SEPARATOR)
   console.log("PRESENT STATE")
   console.log(SEPARATOR)
   console.log()
+
   console.log(`Mission: ${stats.mission ?? "(none)"}`)
   console.log(`Status: ${stats.status ?? "(none)"}`)
-  console.log()
 
   const totalTasks = stats.tasksPending + stats.tasksInProgress + stats.tasksCompleted + stats.tasksBlocked
   if (totalTasks > 0) {
@@ -240,174 +322,114 @@ export async function runInspect(dbPath: string): Promise<void> {
     if (stats.tasksCompleted > 0) console.log(`  Completed: ${stats.tasksCompleted}`)
     if (stats.tasksBlocked > 0) console.log(`  Blocked: ${stats.tasksBlocked}`)
   } else {
-    console.log("Tasks: none")
+    console.log(`Tasks: none`)
   }
 
-  console.log()
-  console.log(SEPARATOR)
-  console.log("LONG-TERM MEMORY")
-  console.log(SEPARATOR)
-  console.log()
-  console.log(`Entries: ${stats.ltmActiveEntries} active (${stats.ltmEntries - stats.ltmActiveEntries} archived)`)
-  console.log()
-  console.log(`/identity: ${fmt(stats.identityTokens)} tokens`)
-  console.log(`/behavior: ${fmt(stats.behaviorTokens)} tokens`)
-  if (stats.knowledgeEntries > 0) {
-    console.log(`/knowledge: ${stats.knowledgeEntries} entries (${fmt(stats.knowledgeTokens)} tokens)`)
-  }
-
-  console.log()
-  console.log(SEPARATOR)
-  console.log("TOKEN BUDGET")
-  console.log(SEPARATOR)
-  console.log()
-
-  const total = config.tokenBudgets.mainAgentContext
-  const systemBase = 500 // Base prompt
-  const tools = 2000 // Tool definitions
-  const presentTokens = 200 // Present state estimate
-
-  const used = systemBase + stats.identityTokens + stats.behaviorTokens + stats.viewTotalTokens + presentTokens + tools
-  const available = total - used
-
-  const pct = (n: number) => ((n / total) * 100).toFixed(1)
-
-  console.log(`Component             Tokens    % of ${(total / 1000).toFixed(0)}k`)
-  console.log(SUBSEPARATOR.slice(0, 45))
-  console.log(`System prompt       ${systemBase.toString().padStart(8)}   ${pct(systemBase).padStart(5)}%`)
-  console.log(`Identity            ${stats.identityTokens.toString().padStart(8)}   ${pct(stats.identityTokens).padStart(5)}%`)
-  console.log(`Behavior            ${stats.behaviorTokens.toString().padStart(8)}   ${pct(stats.behaviorTokens).padStart(5)}%`)
-  console.log(`Temporal summaries  ${stats.viewSummaryTokens.toString().padStart(8)}   ${pct(stats.viewSummaryTokens).padStart(5)}%`)
-  console.log(`Temporal messages   ${stats.viewMessageTokens.toString().padStart(8)}   ${pct(stats.viewMessageTokens).padStart(5)}%`)
-  console.log(`Present state       ${presentTokens.toString().padStart(8)}   ${pct(presentTokens).padStart(5)}%`)
-  console.log(`Tools               ${tools.toString().padStart(8)}   ${pct(tools).padStart(5)}%`)
-  console.log(SUBSEPARATOR.slice(0, 45))
-  console.log(`Total used          ${used.toString().padStart(8)}   ${pct(used).padStart(5)}%`)
-  console.log(`Available           ${available.toString().padStart(8)}   ${pct(available).padStart(5)}%`)
   console.log()
 }
 
 /**
- * Build the full system prompt for --dump output.
+ * Render a CoreMessage turn for display.
  */
-async function buildFullPrompt(storage: Storage): Promise<{
-  sections: Array<{ name: string; content: string; tokens: number }>
-  totalTokens: number
-}> {
-  const config = Config.get()
-  const temporalBudget = config.tokenBudgets.temporalBudget
+function renderTurn(turn: CoreMessage, index: number): string {
+  const lines: string[] = []
+  const roleLabel = turn.role.toUpperCase()
 
-  // Get identity and behavior
-  const identity = await storage.ltm.read("identity")
-  const behavior = await storage.ltm.read("behavior")
-
-  // Get present state
-  const present = await storage.present.get()
-
-  // Get temporal history
-  const allMessages = await storage.temporal.getMessages()
-  const allSummaries = await storage.temporal.getSummaries()
-  const temporalView = buildTemporalView({
-    budget: temporalBudget,
-    messages: allMessages,
-    summaries: allSummaries,
-  })
-
-  const sections: Array<{ name: string; content: string; tokens: number }> = []
-
-  // Base system prompt
-  const basePrompt = `You are a coding assistant with persistent memory.
-
-Your memory spans across conversations, allowing you to remember past decisions, track ongoing projects, and learn user preferences.`
-  sections.push({ name: "SYSTEM PROMPT (base)", content: basePrompt, tokens: estimateTokens(basePrompt) })
-
-  // Identity
-  if (identity) {
-    const identityContent = `<identity>
-${identity.body}
-</identity>`
-    sections.push({ name: "IDENTITY", content: identityContent, tokens: estimateTokens(identityContent) })
+  if (typeof turn.content === "string") {
+    lines.push(`[${index}] ${roleLabel}:`)
+    lines.push(turn.content)
+  } else if (Array.isArray(turn.content)) {
+    lines.push(`[${index}] ${roleLabel}:`)
+    for (const part of turn.content) {
+      if (part.type === "text") {
+        lines.push(part.text)
+      } else if (part.type === "tool-call") {
+        lines.push(`  [tool-call: ${part.toolName}]`)
+        lines.push(`    args: ${JSON.stringify(part.args, null, 2).split("\n").join("\n    ")}`)
+      } else if (part.type === "tool-result") {
+        const result = typeof part.result === "string"
+          ? part.result.slice(0, 200) + (part.result.length > 200 ? "..." : "")
+          : JSON.stringify(part.result).slice(0, 200)
+        lines.push(`  [tool-result: ${part.toolName}]`)
+        lines.push(`    ${result}`)
+      }
+    }
   }
 
-  // Behavior
-  if (behavior) {
-    const behaviorContent = `<behavior>
-${behavior.body}
-</behavior>`
-    sections.push({ name: "BEHAVIOR", content: behaviorContent, tokens: estimateTokens(behaviorContent) })
-  }
-
-  // Temporal history
-  if (temporalView.summaries.length > 0 || temporalView.messages.length > 0) {
-    const temporalContent = `<conversation_history>
-The following is your memory of previous interactions with this user:
-
-${renderTemporalView(temporalView)}
-</conversation_history>`
-    const summaryInfo = temporalView.summaries.length > 0
-      ? `${temporalView.summaries.length} summaries`
-      : "no summaries"
-    const messageInfo = temporalView.messages.length > 0
-      ? `${temporalView.messages.length} messages`
-      : "no messages"
-    sections.push({
-      name: `CONVERSATION HISTORY (${summaryInfo}, ${messageInfo})`,
-      content: temporalContent,
-      tokens: estimateTokens(temporalContent),
-    })
-  }
-
-  // Present state
-  let presentContent = `<present_state>
-<mission>${present.mission ?? "(none)"}</mission>
-<status>${present.status ?? "(none)"}</status>
-<tasks>
-`
-  for (const task of present.tasks) {
-    presentContent += `  <task status="${task.status}">${task.content}</task>\n`
-  }
-  presentContent += `</tasks>
-</present_state>`
-  sections.push({ name: "PRESENT STATE", content: presentContent, tokens: estimateTokens(presentContent) })
-
-  // Tools description
-  const toolsContent = `You have access to tools for file operations (read, write, edit, bash, glob, grep).
-Use tools to accomplish tasks. Always explain what you're doing.
-
-When you're done with a task, update the present state if appropriate.`
-  sections.push({ name: "TOOLS DESCRIPTION", content: toolsContent, tokens: estimateTokens(toolsContent) })
-
-  const totalTokens = sections.reduce((sum, s) => sum + s.tokens, 0)
-
-  return { sections, totalTokens }
+  return lines.join("\n")
 }
 
 /**
  * Run the --dump command.
+ * Shows the system prompt + conversation turns as they would appear to the agent.
  */
 export async function runDump(dbPath: string): Promise<void> {
   const storage = createStorage(dbPath)
   await initializeDefaultEntries(storage)
 
-  const { sections, totalTokens } = await buildFullPrompt(storage)
+  // Build system prompt exactly as the agent sees it
+  const { prompt: systemPrompt, tokens: systemTokens } = await buildSystemPrompt(storage)
+
+  // Build conversation history exactly as the agent sees it
+  const conversationTurns = await buildConversationHistory(storage)
+
+  // Calculate conversation tokens (rough estimate)
+  const conversationTokens = conversationTurns.reduce((sum, turn) => {
+    if (typeof turn.content === "string") {
+      return sum + estimateTokens(turn.content)
+    } else if (Array.isArray(turn.content)) {
+      let tokens = 0
+      for (const part of turn.content) {
+        if (part.type === "text") {
+          tokens += estimateTokens(part.text)
+        } else if (part.type === "tool-call") {
+          tokens += estimateTokens(JSON.stringify(part.args)) + 20
+        } else if (part.type === "tool-result") {
+          tokens += estimateTokens(typeof part.result === "string" ? part.result : JSON.stringify(part.result))
+        }
+      }
+      return sum + tokens
+    }
+    return sum
+  }, 0)
+
+  const totalTokens = systemTokens + conversationTokens
 
   console.log()
   console.log(SEPARATOR)
-  console.log(`SYSTEM PROMPT DUMP (${fmt(totalTokens)} tokens total)`)
+  console.log("AGENT PROMPT DUMP")
+  console.log(SEPARATOR)
+  console.log()
+  console.log(`System prompt: ~${fmt(systemTokens)} tokens`)
+  console.log(`Conversation: ${conversationTurns.length} turns, ~${fmt(conversationTokens)} tokens`)
+  console.log(`Total: ~${fmt(totalTokens)} tokens`)
+
+  console.log()
+  console.log(SEPARATOR)
+  console.log("SYSTEM PROMPT")
+  console.log(SEPARATOR)
+  console.log()
+  console.log(systemPrompt)
+
+  console.log()
+  console.log(SEPARATOR)
+  console.log(`CONVERSATION HISTORY (${conversationTurns.length} turns)`)
   console.log(SEPARATOR)
 
-  for (const section of sections) {
+  if (conversationTurns.length === 0) {
     console.log()
-    console.log(SUBSEPARATOR)
-    console.log(`${section.name} (${fmt(section.tokens)} tokens)`)
-    console.log(SUBSEPARATOR)
-    console.log()
-    console.log(section.content)
+    console.log("(no conversation history)")
+  } else {
+    for (let i = 0; i < conversationTurns.length; i++) {
+      console.log()
+      console.log(SUBSEPARATOR)
+      console.log(renderTurn(conversationTurns[i], i))
+    }
   }
 
   console.log()
   console.log(SEPARATOR)
-  console.log(`END OF DUMP (${fmt(totalTokens)} tokens total)`)
+  console.log("END OF DUMP")
   console.log(SEPARATOR)
   console.log()
 }
