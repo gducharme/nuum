@@ -1,14 +1,19 @@
 /**
- * JSON-RPC protocol types and validation for miriad-code
+ * JSON-RPC protocol types for miriad-code
  *
- * NDJSON format over stdio for interactive mode.
+ * Uses Claude Code SDK compatible message types.
+ * See docs/claude-code-protocol.md for the specification.
  */
 
 import { z } from "zod"
 
-// JSON-RPC request schemas
+// =============================================================================
+// JSON-RPC Request/Response Envelope
+// =============================================================================
+
 export const RunParamsSchema = z.object({
   prompt: z.string(),
+  session_id: z.string().optional(),
 })
 
 export const JsonRpcRequestSchema = z.object({
@@ -21,11 +26,10 @@ export const JsonRpcRequestSchema = z.object({
 export type JsonRpcRequest = z.infer<typeof JsonRpcRequestSchema>
 export type RunParams = z.infer<typeof RunParamsSchema>
 
-// JSON-RPC response types
 export interface JsonRpcResponse {
   jsonrpc: "2.0"
   id: string | number | null
-  result?: JsonRpcResult
+  result?: StreamMessage
   error?: JsonRpcError
 }
 
@@ -35,119 +39,104 @@ export interface JsonRpcError {
   data?: unknown
 }
 
-// Result types for streaming responses
-export type JsonRpcResult =
-  | TextChunkResult
-  | ToolCallResult
-  | ToolResultResult
-  | CompleteResult
-  | CancelledResult
-  | StatusResult
-  | ErrorResult
-  | ConsolidationResultEvent
+// =============================================================================
+// Content Blocks (Claude Code SDK compatible)
+// =============================================================================
 
-export interface TextChunkResult {
+export interface TextBlock {
   type: "text"
-  chunk: string
+  text: string
 }
 
-export interface ToolCallResult {
-  type: "tool_call"
-  callId: string
+export interface ToolUseBlock {
+  type: "tool_use"
+  id: string
   name: string
-  args: unknown
+  input: unknown
 }
 
-export interface ToolResultResult {
+export interface ToolResultBlock {
   type: "tool_result"
-  callId: string
-  result: string
+  tool_use_id: string
+  content: string | null
+  is_error?: boolean
 }
 
-export interface CompleteResult {
-  type: "complete"
-  response: string
-  usage: {
-    inputTokens: number
-    outputTokens: number
+export type ContentBlock = TextBlock | ToolUseBlock | ToolResultBlock
+
+// =============================================================================
+// Stream Messages (Claude Code SDK compatible)
+// =============================================================================
+
+export interface AssistantMessage {
+  type: "assistant"
+  message: {
+    role: "assistant"
+    content: ContentBlock[]
+    model: string
   }
 }
 
-export interface CancelledResult {
-  type: "cancelled"
+export interface ResultMessage {
+  type: "result"
+  subtype: "success" | "error" | "cancelled"
+  duration_ms: number
+  is_error: boolean
+  num_turns: number
+  session_id: string
+  result?: string
+  usage?: {
+    input_tokens: number
+    output_tokens: number
+  }
 }
 
-export interface StatusResult {
-  type: "status"
-  running: boolean
-  requestId?: string | number
+export interface SystemMessage {
+  type: "system"
+  subtype: string
+  [key: string]: unknown
 }
 
-export interface ErrorResult {
-  type: "error"
-  message: string
-}
+export type StreamMessage = AssistantMessage | ResultMessage | SystemMessage
 
-export interface ConsolidationResultEvent {
-  type: "consolidation"
-  entriesCreated: number
-  entriesUpdated: number
-  entriesArchived: number
-  summary: string
-}
+// =============================================================================
+// Error Codes
+// =============================================================================
 
-// Standard JSON-RPC error codes
 export const ErrorCodes = {
   PARSE_ERROR: -32700,
   INVALID_REQUEST: -32600,
   METHOD_NOT_FOUND: -32601,
   INVALID_PARAMS: -32602,
   INTERNAL_ERROR: -32603,
-  // Custom error codes
   ALREADY_RUNNING: -32001,
   NOT_RUNNING: -32002,
   CANCELLED: -32003,
 } as const
 
-/**
- * Create a JSON-RPC response object.
- */
-export function createResponse(id: string | number, result: JsonRpcResult): JsonRpcResponse {
-  return {
-    jsonrpc: "2.0",
-    id,
-    result,
-  }
+// =============================================================================
+// Helper Functions
+// =============================================================================
+
+export function createResponse(id: string | number, result: StreamMessage): JsonRpcResponse {
+  return { jsonrpc: "2.0", id, result }
 }
 
-/**
- * Create a JSON-RPC error response.
- * Per JSON-RPC 2.0 spec, id is null when the request id cannot be determined.
- */
 export function createErrorResponse(
   id: string | number | null,
   code: number,
   message: string,
   data?: unknown,
 ): JsonRpcResponse {
-  return {
-    jsonrpc: "2.0",
-    id,
-    error: { code, message, data },
-  }
+  return { jsonrpc: "2.0", id, error: { code, message, data } }
 }
 
-/**
- * Parse and validate a JSON-RPC request.
- */
 export function parseRequest(line: string): { request: JsonRpcRequest } | { error: JsonRpcResponse } {
   let parsed: unknown
   try {
     parsed = JSON.parse(line)
   } catch {
-    return {
-      error: createErrorResponse(null, ErrorCodes.PARSE_ERROR, "Parse error: invalid JSON"),
-    }
+    return { error: createErrorResponse(null, ErrorCodes.PARSE_ERROR, "Parse error: invalid JSON") }
   }
 
   const result = JsonRpcRequestSchema.safeParse(parsed)
@@ -165,13 +154,58 @@ export function parseRequest(line: string): { request: JsonRpcRequest } | { erro
   return { request: result.data }
 }
 
-/**
- * Validate run params.
- */
 export function validateRunParams(params: unknown): { params: RunParams } | { error: string } {
   const result = RunParamsSchema.safeParse(params)
   if (!result.success) {
     return { error: result.error.format()._errors.join(", ") || "Invalid params" }
   }
   return { params: result.data }
+}
+
+// =============================================================================
+// Message Builders
+// =============================================================================
+
+export function assistantText(text: string, model: string): AssistantMessage {
+  return {
+    type: "assistant",
+    message: { role: "assistant", content: [{ type: "text", text }], model },
+  }
+}
+
+export function assistantToolUse(id: string, name: string, input: unknown, model: string): AssistantMessage {
+  return {
+    type: "assistant",
+    message: { role: "assistant", content: [{ type: "tool_use", id, name, input }], model },
+  }
+}
+
+export function toolResult(toolUseId: string, content: string, isError = false): ToolResultBlock {
+  return { type: "tool_result", tool_use_id: toolUseId, content, is_error: isError || undefined }
+}
+
+export function resultMessage(
+  sessionId: string,
+  subtype: "success" | "error" | "cancelled",
+  durationMs: number,
+  numTurns: number,
+  options: { result?: string; inputTokens?: number; outputTokens?: number } = {},
+): ResultMessage {
+  return {
+    type: "result",
+    subtype,
+    duration_ms: durationMs,
+    is_error: subtype === "error",
+    num_turns: numTurns,
+    session_id: sessionId,
+    result: options.result,
+    usage:
+      options.inputTokens !== undefined
+        ? { input_tokens: options.inputTokens, output_tokens: options.outputTokens ?? 0 }
+        : undefined,
+  }
+}
+
+export function systemMessage(subtype: string, data: Record<string, unknown> = {}): SystemMessage {
+  return { type: "system", subtype, ...data }
 }
