@@ -4,7 +4,9 @@
 
 import { describe, expect, test } from "bun:test"
 import {
-  parseUserMessage,
+  parseInputMessage,
+  isUserMessage,
+  isControlRequest,
   getPromptFromUserMessage,
   assistantText,
   assistantToolUse,
@@ -14,57 +16,87 @@ import {
   type UserMessage,
 } from "./protocol"
 
-describe("parseUserMessage", () => {
-  test("parses valid user message with string content", () => {
-    const line = '{"type":"user","message":{"role":"user","content":"Hello"}}'
-    const result = parseUserMessage(line)
-    expect("message" in result).toBe(true)
-    if ("message" in result) {
-      expect(result.message.type).toBe("user")
-      expect(result.message.message.role).toBe("user")
-      expect(result.message.message.content).toBe("Hello")
-    }
+describe("parseInputMessage", () => {
+  describe("user messages", () => {
+    test("parses valid user message with string content", () => {
+      const line = '{"type":"user","message":{"role":"user","content":"Hello"}}'
+      const result = parseInputMessage(line)
+      expect("message" in result).toBe(true)
+      if ("message" in result) {
+        expect(isUserMessage(result.message)).toBe(true)
+        if (isUserMessage(result.message)) {
+          expect(result.message.type).toBe("user")
+          expect(result.message.message.role).toBe("user")
+          expect(result.message.message.content).toBe("Hello")
+        }
+      }
+    })
+
+    test("parses user message with session_id", () => {
+      const line = '{"type":"user","message":{"role":"user","content":"Hello"},"session_id":"sess_123"}'
+      const result = parseInputMessage(line)
+      expect("message" in result).toBe(true)
+      if ("message" in result && isUserMessage(result.message)) {
+        expect(result.message.session_id).toBe("sess_123")
+      }
+    })
+
+    test("parses user message with content block array", () => {
+      const line = '{"type":"user","message":{"role":"user","content":[{"type":"text","text":"Hello"},{"type":"text","text":"World"}]}}'
+      const result = parseInputMessage(line)
+      expect("message" in result).toBe(true)
+      if ("message" in result && isUserMessage(result.message)) {
+        expect(Array.isArray(result.message.message.content)).toBe(true)
+      }
+    })
   })
 
-  test("parses user message with session_id", () => {
-    const line = '{"type":"user","message":{"role":"user","content":"Hello"},"session_id":"sess_123"}'
-    const result = parseUserMessage(line)
-    expect("message" in result).toBe(true)
-    if ("message" in result) {
-      expect(result.message.session_id).toBe("sess_123")
-    }
+  describe("control requests", () => {
+    test("parses interrupt control request", () => {
+      const line = '{"type":"control","action":"interrupt"}'
+      const result = parseInputMessage(line)
+      expect("message" in result).toBe(true)
+      if ("message" in result) {
+        expect(isControlRequest(result.message)).toBe(true)
+        if (isControlRequest(result.message)) {
+          expect(result.message.action).toBe("interrupt")
+        }
+      }
+    })
+
+    test("parses status control request", () => {
+      const line = '{"type":"control","action":"status"}'
+      const result = parseInputMessage(line)
+      expect("message" in result).toBe(true)
+      if ("message" in result && isControlRequest(result.message)) {
+        expect(result.message.action).toBe("status")
+      }
+    })
   })
 
-  test("parses user message with content block array", () => {
-    const line = '{"type":"user","message":{"role":"user","content":[{"type":"text","text":"Hello"},{"type":"text","text":"World"}]}}'
-    const result = parseUserMessage(line)
-    expect("message" in result).toBe(true)
-    if ("message" in result) {
-      expect(Array.isArray(result.message.message.content)).toBe(true)
-    }
-  })
+  describe("error cases", () => {
+    test("returns error for invalid JSON", () => {
+      const result = parseInputMessage("not json")
+      expect("error" in result).toBe(true)
+      if ("error" in result) {
+        expect(result.error).toContain("Parse error")
+      }
+    })
 
-  test("returns error for invalid JSON", () => {
-    const result = parseUserMessage("not json")
-    expect("error" in result).toBe(true)
-    if ("error" in result) {
-      expect(result.error).toContain("Parse error")
-    }
-  })
+    test("returns error for unknown message type", () => {
+      const result = parseInputMessage('{"type":"unknown"}')
+      expect("error" in result).toBe(true)
+    })
 
-  test("returns error for wrong message type", () => {
-    const result = parseUserMessage('{"type":"assistant","message":{}}')
-    expect("error" in result).toBe(true)
-  })
+    test("returns error for missing message field in user message", () => {
+      const result = parseInputMessage('{"type":"user"}')
+      expect("error" in result).toBe(true)
+    })
 
-  test("returns error for missing message field", () => {
-    const result = parseUserMessage('{"type":"user"}')
-    expect("error" in result).toBe(true)
-  })
-
-  test("returns error for wrong role", () => {
-    const result = parseUserMessage('{"type":"user","message":{"role":"assistant","content":"Hi"}}')
-    expect("error" in result).toBe(true)
+    test("returns error for invalid control action", () => {
+      const result = parseInputMessage('{"type":"control","action":"invalid"}')
+      expect("error" in result).toBe(true)
+    })
   })
 })
 
@@ -155,11 +187,23 @@ describe("message builders", () => {
     expect(msg.is_error).toBe(true)
   })
 
+  test("resultMessage creates cancelled result", () => {
+    const msg = resultMessage("sess_123", "cancelled", 300, 1)
+    expect(msg.subtype).toBe("cancelled")
+    expect(msg.is_error).toBe(false)
+  })
+
   test("systemMessage creates system message", () => {
     const msg = systemMessage("status", { running: true })
     expect(msg.type).toBe("system")
     expect(msg.subtype).toBe("status")
     expect(msg.running).toBe(true)
+  })
+
+  test("systemMessage for queued notification", () => {
+    const msg = systemMessage("queued", { session_id: "sess_1", position: 2 })
+    expect(msg.subtype).toBe("queued")
+    expect(msg.position).toBe(2)
   })
 })
 
@@ -186,9 +230,19 @@ describe("NDJSON format", () => {
 
   test("user message round-trips through JSON", () => {
     const input = '{"type":"user","message":{"role":"user","content":"Hello"},"session_id":"test"}'
-    const result = parseUserMessage(input)
+    const result = parseInputMessage(input)
     expect("message" in result).toBe(true)
-    if ("message" in result) {
+    if ("message" in result && isUserMessage(result.message)) {
+      const roundTripped = JSON.stringify(result.message)
+      expect(JSON.parse(roundTripped)).toEqual(result.message)
+    }
+  })
+
+  test("control request round-trips through JSON", () => {
+    const input = '{"type":"control","action":"interrupt"}'
+    const result = parseInputMessage(input)
+    expect("message" in result).toBe(true)
+    if ("message" in result && isControlRequest(result.message)) {
       const roundTripped = JSON.stringify(result.message)
       expect(JSON.parse(roundTripped)).toEqual(result.message)
     }

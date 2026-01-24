@@ -28,6 +28,28 @@ Fields:
 - `message.content`: String or array of content blocks
 - `session_id`: Optional session identifier
 
+### Control Request
+
+```json
+{"type":"control","action":"interrupt"}
+{"type":"control","action":"status"}
+```
+
+Actions:
+- `interrupt`: Cancel the current turn (if running)
+- `status`: Get server status (running, session_id, queued_messages)
+
+## Out-of-Turn Message Delivery
+
+Messages received while a turn is running are **queued** and processed after the current turn completes.
+
+When a message is queued, the server responds with:
+```json
+{"type":"system","subtype":"queued","session_id":"sess_2","position":1}
+```
+
+After the current turn completes, queued messages are processed in order.
+
 ## Output Messages (stdout)
 
 ### Assistant Message
@@ -106,12 +128,13 @@ For metadata and events:
 - ✅ Result messages with usage stats
 - ✅ System messages for tool results and errors
 - ✅ Process stays alive between turns
+- ✅ Out-of-turn message delivery (queued messages)
+- ✅ Interrupt control request
 
 ### Not Implemented (Yet)
 - ❌ Thinking blocks (extended reasoning)
 - ❌ Stream events (partial message updates)
-- ❌ Control protocol (permission callbacks, hooks)
-- ❌ Out-of-turn message delivery (messages during a turn)
+- ❌ Full control protocol (permission callbacks, hooks)
 
 ## Usage
 

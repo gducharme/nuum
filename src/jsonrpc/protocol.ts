@@ -45,9 +45,16 @@ export const UserMessageSchema = z.object({
   session_id: z.string().optional(),
 })
 
-export type UserMessage = z.infer<typeof UserMessageSchema>
+export const ControlRequestSchema = z.object({
+  type: z.literal("control"),
+  action: z.enum(["interrupt", "status"]),
+})
 
-export function parseUserMessage(line: string): { message: UserMessage } | { error: string } {
+export type UserMessage = z.infer<typeof UserMessageSchema>
+export type ControlRequest = z.infer<typeof ControlRequestSchema>
+export type InputMessage = UserMessage | ControlRequest
+
+export function parseInputMessage(line: string): { message: InputMessage } | { error: string } {
   let parsed: unknown
   try {
     parsed = JSON.parse(line)
@@ -55,12 +62,27 @@ export function parseUserMessage(line: string): { message: UserMessage } | { err
     return { error: "Parse error: invalid JSON" }
   }
 
-  const result = UserMessageSchema.safeParse(parsed)
-  if (!result.success) {
-    return { error: `Invalid message: ${result.error.message}` }
+  // Try parsing as control request first (simpler schema)
+  const controlResult = ControlRequestSchema.safeParse(parsed)
+  if (controlResult.success) {
+    return { message: controlResult.data }
   }
 
-  return { message: result.data }
+  // Try parsing as user message
+  const userResult = UserMessageSchema.safeParse(parsed)
+  if (userResult.success) {
+    return { message: userResult.data }
+  }
+
+  return { error: `Invalid message: expected type 'user' or 'control'` }
+}
+
+export function isUserMessage(msg: InputMessage): msg is UserMessage {
+  return msg.type === "user"
+}
+
+export function isControlRequest(msg: InputMessage): msg is ControlRequest {
+  return msg.type === "control"
 }
 
 export function getPromptFromUserMessage(message: UserMessage): string {

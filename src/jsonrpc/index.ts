@@ -2,13 +2,17 @@
  * Claude Code SDK Protocol Server
  *
  * Raw NDJSON over stdin/stdout. Process stays alive between turns.
+ * Supports out-of-turn message delivery - messages received during a turn
+ * are queued and processed after the current turn completes.
  */
 
 import * as readline from "readline"
 import { createStorage, initializeDefaultEntries, type Storage } from "../storage"
 import { runAgent, type AgentEvent, type AgentOptions } from "../agent"
 import {
-  parseUserMessage,
+  parseInputMessage,
+  isUserMessage,
+  isControlRequest,
   getPromptFromUserMessage,
   assistantText,
   assistantToolUse,
@@ -17,6 +21,7 @@ import {
   systemMessage,
   type OutputMessage,
   type UserMessage,
+  type ControlRequest,
 } from "./protocol"
 import { Log } from "../util/log"
 import { Config } from "../config"
@@ -43,7 +48,9 @@ interface TurnState {
 export class Server {
   private storage: Storage
   private currentTurn: TurnState | null = null
+  private messageQueue: UserMessage[] = []
   private rl: readline.Interface | null = null
+  private processing = false
 
   constructor(private options: ServerOptions) {
     this.storage = createStorage(options.dbPath)
@@ -76,23 +83,71 @@ export class Server {
     const trimmed = line.trim()
     if (!trimmed) return
 
-    const parseResult = parseUserMessage(trimmed)
+    const parseResult = parseInputMessage(trimmed)
     if ("error" in parseResult) {
       this.send(systemMessage("error", { message: parseResult.error }))
       return
     }
 
-    await this.handleUserMessage(parseResult.message)
+    const msg = parseResult.message
+
+    if (isControlRequest(msg)) {
+      await this.handleControlRequest(msg)
+    } else if (isUserMessage(msg)) {
+      await this.handleUserMessage(msg)
+    }
+  }
+
+  private async handleControlRequest(request: ControlRequest): Promise<void> {
+    switch (request.action) {
+      case "interrupt":
+        if (this.currentTurn) {
+          log.info("interrupting current turn", { sessionId: this.currentTurn.sessionId })
+          this.currentTurn.abortController.abort()
+          this.send(systemMessage("interrupted", { session_id: this.currentTurn.sessionId }))
+        } else {
+          this.send(systemMessage("error", { message: "No turn is currently running" }))
+        }
+        break
+
+      case "status":
+        this.send(
+          systemMessage("status", {
+            running: this.currentTurn !== null,
+            session_id: this.currentTurn?.sessionId,
+            queued_messages: this.messageQueue.length,
+          }),
+        )
+        break
+    }
   }
 
   private async handleUserMessage(userMessage: UserMessage): Promise<void> {
-    // For now, reject if a turn is already running
-    // TODO: Support out-of-turn message delivery
+    // If a turn is running, queue the message
     if (this.currentTurn) {
-      this.send(systemMessage("error", { message: "A turn is already running" }))
+      this.messageQueue.push(userMessage)
+      log.info("queued message", { 
+        sessionId: userMessage.session_id, 
+        queueLength: this.messageQueue.length,
+        currentSession: this.currentTurn.sessionId,
+      })
+      this.send(
+        systemMessage("queued", {
+          session_id: userMessage.session_id,
+          position: this.messageQueue.length,
+        }),
+      )
       return
     }
 
+    // Process this message
+    await this.processTurn(userMessage)
+
+    // Process any queued messages
+    await this.processQueue()
+  }
+
+  private async processTurn(userMessage: UserMessage): Promise<void> {
     const sessionId = userMessage.session_id ?? `session_${Date.now()}`
     const prompt = getPromptFromUserMessage(userMessage)
     const abortController = new AbortController()
@@ -125,9 +180,17 @@ export class Server {
             outputTokens: result.usage.outputTokens,
           }),
         )
+      } else {
+        // Turn was interrupted
+        this.send(
+          resultMessage(sessionId, "cancelled", Date.now() - this.currentTurn.startTime, this.currentTurn.numTurns),
+        )
       }
     } catch (error) {
-      if (abortController.signal.aborted) return
+      if (abortController.signal.aborted) {
+        // Turn was interrupted - already sent cancelled result
+        return
+      }
 
       const message = error instanceof Error ? error.message : String(error)
       log.error("turn failed", { sessionId, error: message })
@@ -139,6 +202,25 @@ export class Server {
       )
     } finally {
       this.currentTurn = null
+    }
+  }
+
+  private async processQueue(): Promise<void> {
+    // Prevent re-entrancy
+    if (this.processing) return
+    this.processing = true
+
+    try {
+      while (this.messageQueue.length > 0 && !this.currentTurn) {
+        const nextMessage = this.messageQueue.shift()!
+        log.info("processing queued message", { 
+          sessionId: nextMessage.session_id,
+          remainingInQueue: this.messageQueue.length,
+        })
+        await this.processTurn(nextMessage)
+      }
+    } finally {
+      this.processing = false
     }
   }
 
@@ -193,4 +275,4 @@ export async function runServer(options: ServerOptions): Promise<void> {
   await server.start()
 }
 
-export type { UserMessage, OutputMessage } from "./protocol"
+export type { UserMessage, ControlRequest, OutputMessage } from "./protocol"
