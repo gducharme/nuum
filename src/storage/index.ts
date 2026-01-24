@@ -129,6 +129,20 @@ function createStorageFromDb(db: DrizzleDB): StorageWithDb {
 export { getRawConnection }
 
 /**
+ * Clean up stale workers from a previous crashed session.
+ * 
+ * If the process was killed while workers were running, their status
+ * will be stuck as "running" in the database. This prevents new
+ * compaction/consolidation from triggering.
+ * 
+ * Call this on startup before running any agents.
+ */
+export async function cleanupStaleWorkers(storage: Storage): Promise<number> {
+  const cleaned = await storage.workers.failAllRunning("Process terminated unexpectedly")
+  return cleaned
+}
+
+/**
  * Initialize default LTM entries (/identity and /behavior).
  *
  * These special entries are always included in the system prompt.

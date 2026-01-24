@@ -7,7 +7,7 @@
  */
 
 import * as readline from "readline"
-import { createStorage, initializeDefaultEntries, type Storage } from "../storage"
+import { createStorage, initializeDefaultEntries, cleanupStaleWorkers, type Storage } from "../storage"
 import { runAgent, type AgentEvent, type AgentOptions } from "../agent"
 import {
   parseInputMessage,
@@ -60,6 +60,7 @@ export class Server {
   }
 
   async start(): Promise<void> {
+    await cleanupStaleWorkers(this.storage)
     await initializeDefaultEntries(this.storage)
 
     // Get or create session ID (persisted in database)

@@ -13,7 +13,7 @@ import * as readline from "readline"
 import * as fs from "fs"
 import * as path from "path"
 import * as os from "os"
-import { createStorage, initializeDefaultEntries, type Storage } from "../storage"
+import { createStorage, initializeDefaultEntries, cleanupStaleWorkers, type Storage } from "../storage"
 import { runAgent, AgentCancelledError, type AgentEvent, type AgentOptions } from "../agent"
 import { runInspect, runDump } from "./inspect"
 
@@ -43,6 +43,7 @@ export class ReplSession {
    * Start the REPL.
    */
   async start(): Promise<void> {
+    await cleanupStaleWorkers(this.storage)
     await initializeDefaultEntries(this.storage)
 
     // Load history

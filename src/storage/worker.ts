@@ -27,6 +27,8 @@ export interface WorkerStorage {
   getAll(): Promise<Worker[]>
   complete(id: string): Promise<void>
   fail(id: string, error: string): Promise<void>
+  /** Mark all running workers as failed (for startup cleanup after crash) */
+  failAllRunning(error: string): Promise<number>
 }
 
 export function createWorkerStorage(db: DrizzleDB | AnyDrizzleDB): WorkerStorage {
@@ -88,6 +90,15 @@ export function createWorkerStorage(db: DrizzleDB | AnyDrizzleDB): WorkerStorage
         completedAt: new Date().toISOString(),
         error,
       }).where(eq(workers.id, id))
+    },
+
+    async failAllRunning(error: string): Promise<number> {
+      const result = await db.update(workers).set({
+        status: "failed",
+        completedAt: new Date().toISOString(),
+        error,
+      }).where(eq(workers.status, "running"))
+      return result.changes
     },
   }
 }

@@ -5,7 +5,7 @@
  * With --verbose, shows memory state and execution trace on stderr.
  */
 
-import { createStorage, initializeDefaultEntries, type Storage } from "../storage"
+import { createStorage, initializeDefaultEntries, cleanupStaleWorkers, type Storage } from "../storage"
 import { runAgent, type AgentEvent } from "../agent"
 import { VerboseOutput, type MemoryStats, type TokenBudget, type SummaryOrderStats } from "./verbose"
 import { buildTemporalView } from "../temporal"
@@ -147,6 +147,7 @@ export async function runBatch(options: BatchOptions): Promise<void> {
   try {
     // Initialize storage
     storage = createStorage(options.dbPath)
+    await cleanupStaleWorkers(storage)
     await initializeDefaultEntries(storage)
 
     // Get initial memory state for verbose output
