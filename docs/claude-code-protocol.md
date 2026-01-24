@@ -1,264 +1,123 @@
-# Claude Code SDK Protocol Specification
+# Claude Code SDK Protocol
 
-This document describes the Claude Code SDK wire protocol, extracted from the
-official `claude-code-sdk-python` repository. Our goal is to support a compatible
-subset of this protocol.
+miriad-code implements a subset of the Claude Code SDK protocol for compatibility
+with orchestration platforms like miriad.systems.
 
 ## Transport
 
 - **Format**: Newline-delimited JSON (NDJSON) over stdin/stdout
-- **Direction**: Bidirectional - both sides can send messages
-- **Subprocess**: SDK spawns CLI with `--output-format stream-json --input-format stream-json`
+- **Direction**: Bidirectional
+- **Process**: Stays alive between turns, accepts ongoing user messages
 
-## Message Types
+## Input Messages (stdin)
 
-All messages have a `type` field that determines their structure.
+### User Message
 
-### User Message (`type: "user"`)
-
-```typescript
-interface UserMessage {
-  type: "user"
-  message: {
-    role: "user"
-    content: string | ContentBlock[]
-  }
-  uuid?: string
-  parent_tool_use_id?: string  // For tool result responses
-  tool_use_result?: object     // Tool result metadata
-  session_id?: string
-}
+```json
+{"type":"user","message":{"role":"user","content":"Hello"},"session_id":"default"}
 ```
 
-### Assistant Message (`type: "assistant"`)
-
-```typescript
-interface AssistantMessage {
-  type: "assistant"
-  message: {
-    role: "assistant"
-    content: ContentBlock[]
-    model: string              // e.g., "claude-sonnet-4-20250514"
-    error?: AssistantMessageError
-  }
-  parent_tool_use_id?: string
-}
-
-type AssistantMessageError = 
-  | "authentication_failed"
-  | "billing_error"
-  | "rate_limit"
-  | "invalid_request"
-  | "server_error"
-  | "unknown"
+With content blocks:
+```json
+{"type":"user","message":{"role":"user","content":[{"type":"text","text":"Hello"}]},"session_id":"default"}
 ```
 
-### System Message (`type: "system"`)
+Fields:
+- `type`: Always `"user"`
+- `message.role`: Always `"user"`
+- `message.content`: String or array of content blocks
+- `session_id`: Optional session identifier
 
-```typescript
-interface SystemMessage {
-  type: "system"
-  subtype: string  // e.g., "init", "status", etc.
-  // ... additional fields based on subtype
-}
+## Output Messages (stdout)
+
+### Assistant Message
+
+```json
+{"type":"assistant","message":{"role":"assistant","content":[{"type":"text","text":"Hello!"}],"model":"claude-opus-4-5-20251101"}}
 ```
 
-### Result Message (`type: "result"`)
-
-Sent when a conversation turn completes.
-
-```typescript
-interface ResultMessage {
-  type: "result"
-  subtype: string
-  duration_ms: number
-  duration_api_ms: number
-  is_error: boolean
-  num_turns: number
-  session_id: string
-  total_cost_usd?: number
-  usage?: {
-    input_tokens: number
-    output_tokens: number
-    cache_read_input_tokens?: number
-    cache_creation_input_tokens?: number
-  }
-  result?: string              // Final text response
-  structured_output?: any      // If using JSON schema output
-}
+With tool use:
+```json
+{"type":"assistant","message":{"role":"assistant","content":[{"type":"tool_use","id":"call_123","name":"read","input":{"filePath":"/tmp/test.txt"}}],"model":"claude-opus-4-5-20251101"}}
 ```
 
-### Stream Event (`type: "stream_event"`)
+### Result Message
 
-For partial message updates during streaming (requires `--include-partial-messages`).
+Sent when a turn completes:
 
-```typescript
-interface StreamEvent {
-  type: "stream_event"
-  uuid: string
-  session_id: string
-  event: object  // Raw Anthropic API stream event
-  parent_tool_use_id?: string
-}
+```json
+{"type":"result","subtype":"success","duration_ms":1234,"is_error":false,"num_turns":3,"session_id":"default","result":"Done!","usage":{"input_tokens":100,"output_tokens":50}}
+```
+
+Fields:
+- `subtype`: `"success"`, `"error"`, or `"cancelled"`
+- `duration_ms`: Total turn duration in milliseconds
+- `is_error`: Boolean indicating error state
+- `num_turns`: Number of tool use cycles
+- `session_id`: Session identifier
+- `result`: Final text response (optional)
+- `usage`: Token usage (optional)
+
+### System Message
+
+For metadata and events:
+
+```json
+{"type":"system","subtype":"tool_result","tool_result":{"type":"tool_result","tool_use_id":"call_123","content":"file contents"}}
+{"type":"system","subtype":"error","message":"Something went wrong"}
+{"type":"system","subtype":"consolidation","entries_created":2,"entries_updated":1}
 ```
 
 ## Content Blocks
 
-Messages contain arrays of content blocks:
-
 ### Text Block
-
-```typescript
-interface TextBlock {
-  type: "text"
-  text: string
-}
-```
-
-### Thinking Block
-
-Extended thinking content (requires beta flag).
-
-```typescript
-interface ThinkingBlock {
-  type: "thinking"
-  thinking: string
-  signature: string  // Verification signature
-}
+```json
+{"type":"text","text":"Hello world"}
 ```
 
 ### Tool Use Block
-
-Request to execute a tool.
-
-```typescript
-interface ToolUseBlock {
-  type: "tool_use"
-  id: string         // Unique tool call ID
-  name: string       // Tool name
-  input: object      // Tool arguments
-}
+```json
+{"type":"tool_use","id":"call_123","name":"read","input":{"filePath":"/tmp/test.txt"}}
 ```
 
 ### Tool Result Block
-
-Result from tool execution.
-
-```typescript
-interface ToolResultBlock {
-  type: "tool_result"
-  tool_use_id: string           // References tool_use.id
-  content: string | ContentBlock[] | null
-  is_error?: boolean
-}
+```json
+{"type":"tool_result","tool_use_id":"call_123","content":"file contents","is_error":false}
 ```
 
-## Control Protocol
+## Example Session
 
-Bidirectional control messages for runtime interaction.
-
-### Control Request (CLI → SDK)
-
-```typescript
-interface ControlRequest {
-  type: "control_request"
-  request_id: string
-  request: ControlRequestPayload
-}
-
-type ControlRequestPayload =
-  | { subtype: "can_use_tool", tool_name: string, input: object, permission_suggestions?: any[] }
-  | { subtype: "hook_callback", callback_id: string, input: any, tool_use_id?: string }
-  | { subtype: "mcp_message", server_name: string, message: object }
+```
+→ {"type":"user","message":{"role":"user","content":"Read /tmp/test.txt"},"session_id":"sess_1"}
+← {"type":"assistant","message":{"role":"assistant","content":[{"type":"text","text":"I'll read that file for you."},{"type":"tool_use","id":"call_1","name":"read","input":{"filePath":"/tmp/test.txt"}}],"model":"claude-opus-4-5-20251101"}}
+← {"type":"system","subtype":"tool_result","tool_result":{"type":"tool_result","tool_use_id":"call_1","content":"Hello from test file!"}}
+← {"type":"assistant","message":{"role":"assistant","content":[{"type":"text","text":"The file contains: Hello from test file!"}],"model":"claude-opus-4-5-20251101"}}
+← {"type":"result","subtype":"success","duration_ms":2500,"is_error":false,"num_turns":1,"session_id":"sess_1","result":"The file contains: Hello from test file!","usage":{"input_tokens":150,"output_tokens":30}}
+→ {"type":"user","message":{"role":"user","content":"Thanks!"},"session_id":"sess_1"}
+← {"type":"assistant","message":{"role":"assistant","content":[{"type":"text","text":"You're welcome!"}],"model":"claude-opus-4-5-20251101"}}
+← {"type":"result","subtype":"success","duration_ms":800,"is_error":false,"num_turns":0,"session_id":"sess_1","result":"You're welcome!","usage":{"input_tokens":50,"output_tokens":10}}
 ```
 
-### Control Request (SDK → CLI)
-
-```typescript
-interface ControlRequest {
-  type: "control_request"
-  request_id: string
-  request: ControlRequestPayload
-}
-
-type ControlRequestPayload =
-  | { subtype: "initialize", hooks?: object }
-  | { subtype: "interrupt" }
-  | { subtype: "set_permission_mode", mode: PermissionMode }
-  | { subtype: "set_model", model: string | null }
-  | { subtype: "rewind_files", user_message_id: string }
-```
-
-### Control Response
-
-```typescript
-interface ControlResponse {
-  type: "control_response"
-  response: {
-    subtype: "success" | "error"
-    request_id: string
-    response?: object  // For success
-    error?: string     // For error
-  }
-}
-```
-
-## What We Support (miriad-code)
-
-We use JSON-RPC 2.0 envelope with Claude Code SDK compatible message types.
+## Differences from Claude Code SDK
 
 ### Implemented
+- ✅ User messages with string or content block array
+- ✅ Assistant messages with text and tool_use blocks
+- ✅ Result messages with usage stats
+- ✅ System messages for tool results and errors
+- ✅ Process stays alive between turns
 
-| Feature | Status | Notes |
-|---------|--------|-------|
-| Assistant messages | ✅ | `type: "assistant"` with content blocks |
-| Text blocks | ✅ | `{type: "text", text: string}` |
-| Tool use blocks | ✅ | `{type: "tool_use", id, name, input}` |
-| Tool result blocks | ✅ | `{type: "tool_result", tool_use_id, content}` |
-| Result message | ✅ | `type: "result"` with usage, duration, etc. |
-| System messages | ✅ | `type: "system"` for status, errors, consolidation |
+### Not Implemented (Yet)
+- ❌ Thinking blocks (extended reasoning)
+- ❌ Stream events (partial message updates)
+- ❌ Control protocol (permission callbacks, hooks)
+- ❌ Out-of-turn message delivery (messages during a turn)
 
-### Not Implemented
+## Usage
 
-| Feature | Notes |
-|---------|-------|
-| Thinking blocks | Requires beta flag |
-| Stream events | Partial message updates |
-| Control protocol | Permission callbacks, hooks, MCP routing |
-| User messages | We use JSON-RPC `run` method instead |
-
-## Example Message Flow
-
-### Simple Query
-
-```json
-// SDK → CLI (input)
-{"type":"user","message":{"role":"user","content":"Hello"},"session_id":"default"}
-
-// CLI → SDK (streaming output)
-{"type":"assistant","message":{"role":"assistant","content":[{"type":"text","text":"Hello! How can I help?"}],"model":"claude-sonnet-4-20250514"}}
-{"type":"result","subtype":"success","duration_ms":1234,"duration_api_ms":1000,"is_error":false,"num_turns":1,"session_id":"abc123","usage":{"input_tokens":10,"output_tokens":20}}
+Start the server:
+```bash
+miriad-code --stdio --db ./agent.db
 ```
 
-### Tool Use
-
-```json
-// CLI → SDK (assistant wants to use tool)
-{"type":"assistant","message":{"role":"assistant","content":[{"type":"text","text":"Let me read that file."},{"type":"tool_use","id":"call_123","name":"read","input":{"filePath":"/tmp/test.txt"}}],"model":"claude-sonnet-4-20250514"}}
-
-// SDK → CLI (tool result as user message)
-{"type":"user","message":{"role":"user","content":[{"type":"tool_result","tool_use_id":"call_123","content":"File contents here"}]},"session_id":"default"}
-
-// CLI → SDK (assistant continues)
-{"type":"assistant","message":{"role":"assistant","content":[{"type":"text","text":"The file contains..."}],"model":"claude-sonnet-4-20250514"}}
-{"type":"result","subtype":"success",...}
-```
-
-## References
-
-- Source: https://github.com/anthropics/claude-code-sdk-python
-- Files analyzed:
-  - `src/claude_agent_sdk/types.py` (756 lines)
-  - `src/claude_agent_sdk/_internal/query.py` (622 lines)
-  - `src/claude_agent_sdk/_internal/message_parser.py` (181 lines)
-  - `src/claude_agent_sdk/_internal/transport/subprocess_cli.py` (673 lines)
+Send messages via stdin, receive responses via stdout.

@@ -5,14 +5,14 @@
  * Only ANTHROPIC_API_KEY is required.
  */
 
-import { z } from "zod"
+import { z } from "zod";
 
 export namespace Config {
   /**
    * Model tiers for different use cases.
    * See arch spec for token budget rationale.
    */
-  export type ModelTier = "reasoning" | "workhorse" | "fast"
+  export type ModelTier = "reasoning" | "workhorse" | "fast";
 
   export const Schema = z.object({
     provider: z.string().default("anthropic"),
@@ -31,9 +31,9 @@ export namespace Config {
       /** Max tokens for temporal view in prompt */
       temporalBudget: z.number().default(64_000),
       /** Trigger compaction when uncompacted exceeds this */
-      compactionThreshold: z.number().default(20_000),
+      compactionThreshold: z.number().default(100_000),
       /** Target size after compaction */
-      compactionTarget: z.number().default(15_000),
+      compactionTarget: z.number().default(80_000),
       /** Minimum recent messages to preserve (never summarized) */
       recencyBufferMessages: z.number().default(10),
       /** Temporal search sub-agent budget (Sonnet 1M beta) */
@@ -43,18 +43,18 @@ export namespace Config {
       /** LTM consolidation worker budget (Sonnet 1M beta) */
       ltmConsolidateBudget: z.number().default(512_000),
     }),
-  })
+  });
 
-  export type Config = z.infer<typeof Schema>
+  export type Config = z.infer<typeof Schema>;
 
-  let cached: Config | null = null
+  let cached: Config | null = null;
 
   /**
    * Get the current configuration.
    * Loads from environment variables with sensible defaults.
    */
   export function get(): Config {
-    if (cached) return cached
+    if (cached) return cached;
 
     cached = Schema.parse({
       provider: process.env.AGENT_PROVIDER,
@@ -65,23 +65,23 @@ export namespace Config {
       },
       db: process.env.AGENT_DB,
       tokenBudgets: {},
-    })
+    });
 
-    return cached
+    return cached;
   }
 
   /**
    * Get the model ID for a given tier.
    */
   export function resolveModelTier(tier: ModelTier): string {
-    const config = get()
-    return config.models[tier]
+    const config = get();
+    return config.models[tier];
   }
 
   /**
    * Reset cached config (for testing).
    */
   export function reset(): void {
-    cached = null
+    cached = null;
   }
 }

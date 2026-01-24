@@ -128,6 +128,23 @@ function createToolContextFactory(
 }
 
 /**
+ * Wrap a tool execution with error handling.
+ * Returns errors as string results instead of throwing, so the agent can see and react to them.
+ */
+async function safeExecute<T>(
+  toolName: string,
+  fn: () => Promise<{ output: string } & T>,
+): Promise<string> {
+  try {
+    const result = await fn()
+    return result.output
+  } catch (error) {
+    const message = error instanceof Error ? error.message : String(error)
+    return `Error executing tool ${toolName}: ${message}`
+  }
+}
+
+/**
  * Convert our Tool definitions to AI SDK CoreTool format with execute callbacks.
  * This eliminates the need for a separate executeTool() switch statement.
  *
@@ -147,78 +164,62 @@ function buildTools(
   const mcpTools = Mcp.getTools()
   Object.assign(tools, mcpTools)
 
-  // File operation tools - wire execute directly
+  // File operation tools - wire execute with error handling
   tools.bash = tool({
     description: BashTool.definition.description,
     parameters: BashTool.definition.parameters,
-    execute: async (args, { toolCallId }) => {
-      const result = await BashTool.definition.execute(args, factory.createContext(toolCallId))
-      return result.output
-    },
+    execute: async (args, { toolCallId }) =>
+      safeExecute("bash", () => BashTool.definition.execute(args, factory.createContext(toolCallId))),
   })
 
   tools.read = tool({
     description: ReadTool.definition.description,
     parameters: ReadTool.definition.parameters,
-    execute: async (args, { toolCallId }) => {
-      const result = await ReadTool.definition.execute(args, factory.createContext(toolCallId))
-      return result.output
-    },
+    execute: async (args, { toolCallId }) =>
+      safeExecute("read", () => ReadTool.definition.execute(args, factory.createContext(toolCallId))),
   })
 
   tools.write = tool({
     description: WriteTool.definition.description,
     parameters: WriteTool.definition.parameters,
-    execute: async (args, { toolCallId }) => {
-      const result = await WriteTool.definition.execute(args, factory.createContext(toolCallId))
-      return result.output
-    },
+    execute: async (args, { toolCallId }) =>
+      safeExecute("write", () => WriteTool.definition.execute(args, factory.createContext(toolCallId))),
   })
 
   tools.edit = tool({
     description: EditTool.definition.description,
     parameters: EditTool.definition.parameters,
-    execute: async (args, { toolCallId }) => {
-      const result = await EditTool.definition.execute(args, factory.createContext(toolCallId))
-      return result.output
-    },
+    execute: async (args, { toolCallId }) =>
+      safeExecute("edit", () => EditTool.definition.execute(args, factory.createContext(toolCallId))),
   })
 
   tools.glob = tool({
     description: GlobTool.definition.description,
     parameters: GlobTool.definition.parameters,
-    execute: async (args, { toolCallId }) => {
-      const result = await GlobTool.definition.execute(args, factory.createContext(toolCallId))
-      return result.output
-    },
+    execute: async (args, { toolCallId }) =>
+      safeExecute("glob", () => GlobTool.definition.execute(args, factory.createContext(toolCallId))),
   })
 
   tools.grep = tool({
     description: GrepTool.definition.description,
     parameters: GrepTool.definition.parameters,
-    execute: async (args, { toolCallId }) => {
-      const result = await GrepTool.definition.execute(args, factory.createContext(toolCallId))
-      return result.output
-    },
+    execute: async (args, { toolCallId }) =>
+      safeExecute("grep", () => GrepTool.definition.execute(args, factory.createContext(toolCallId))),
   })
 
   // Web tools
   tools.web_search = tool({
     description: WebSearchTool.definition.description,
     parameters: WebSearchTool.definition.parameters,
-    execute: async (args, { toolCallId }) => {
-      const result = await WebSearchTool.definition.execute(args, factory.createContext(toolCallId))
-      return result.output
-    },
+    execute: async (args, { toolCallId }) =>
+      safeExecute("web_search", () => WebSearchTool.definition.execute(args, factory.createContext(toolCallId))),
   })
 
   tools.web_fetch = tool({
     description: WebFetchTool.definition.description,
     parameters: WebFetchTool.definition.parameters,
-    execute: async (args, { toolCallId }) => {
-      const result = await WebFetchTool.definition.execute(args, factory.createContext(toolCallId))
-      return result.output
-    },
+    execute: async (args, { toolCallId }) =>
+      safeExecute("web_fetch", () => WebFetchTool.definition.execute(args, factory.createContext(toolCallId))),
   })
 
   // Present state tools - inline execution
@@ -266,28 +267,22 @@ function buildTools(
   tools.ltm_glob = tool({
     description: LTMGlobTool.definition.description,
     parameters: LTMGlobTool.definition.parameters,
-    execute: async (args, { toolCallId }) => {
-      const result = await LTMGlobTool.definition.execute(args, factory.createLTMContext(toolCallId))
-      return result.output
-    },
+    execute: async (args, { toolCallId }) =>
+      safeExecute("ltm_glob", () => LTMGlobTool.definition.execute(args, factory.createLTMContext(toolCallId))),
   })
 
   tools.ltm_search = tool({
     description: LTMSearchTool.definition.description,
     parameters: LTMSearchTool.definition.parameters,
-    execute: async (args, { toolCallId }) => {
-      const result = await LTMSearchTool.definition.execute(args, factory.createLTMContext(toolCallId))
-      return result.output
-    },
+    execute: async (args, { toolCallId }) =>
+      safeExecute("ltm_search", () => LTMSearchTool.definition.execute(args, factory.createLTMContext(toolCallId))),
   })
 
   tools.ltm_read = tool({
     description: LTMReadTool.definition.description,
     parameters: LTMReadTool.definition.parameters,
-    execute: async (args, { toolCallId }) => {
-      const result = await LTMReadTool.definition.execute(args, factory.createLTMContext(toolCallId))
-      return result.output
-    },
+    execute: async (args, { toolCallId }) =>
+      safeExecute("ltm_read", () => LTMReadTool.definition.execute(args, factory.createLTMContext(toolCallId))),
   })
 
   return tools

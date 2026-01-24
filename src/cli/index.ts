@@ -10,7 +10,7 @@
 import { parseArgs } from "util"
 import { runBatch } from "./batch"
 import { runInspect, runDump } from "./inspect"
-import { runJsonRpc } from "../jsonrpc"
+import { runServer } from "../jsonrpc"
 import { runRepl } from "./repl"
 
 interface CliOptions {
@@ -138,8 +138,8 @@ async function main(): Promise<void> {
   // Handle --stdio (JSON-RPC mode)
   if (options.stdio) {
     try {
-      await runJsonRpc({ dbPath: options.db })
-      // runJsonRpc keeps running until stdin closes
+      await runServer({ dbPath: options.db })
+      // runServer keeps running until stdin closes
     } catch (error) {
       if (error instanceof Error) {
         console.error(`Error: ${error.message}`)

@@ -1,110 +1,108 @@
 /**
- * Tests for JSON-RPC protocol parsing and validation.
+ * Tests for Claude Code SDK protocol parsing and message builders.
  */
 
 import { describe, expect, test } from "bun:test"
 import {
-  parseRequest,
-  validateRunParams,
-  createResponse,
-  createErrorResponse,
+  parseUserMessage,
+  getPromptFromUserMessage,
   assistantText,
   assistantToolUse,
   toolResult,
   resultMessage,
   systemMessage,
-  ErrorCodes,
+  type UserMessage,
 } from "./protocol"
 
-describe("parseRequest", () => {
-  test("parses valid run request", () => {
-    const line = '{"jsonrpc":"2.0","id":1,"method":"run","params":{"prompt":"Hello"}}'
-    const result = parseRequest(line)
-    expect("request" in result).toBe(true)
-    if ("request" in result) {
-      expect(result.request.jsonrpc).toBe("2.0")
-      expect(result.request.id).toBe(1)
-      expect(result.request.method).toBe("run")
-      expect(result.request.params).toEqual({ prompt: "Hello" })
+describe("parseUserMessage", () => {
+  test("parses valid user message with string content", () => {
+    const line = '{"type":"user","message":{"role":"user","content":"Hello"}}'
+    const result = parseUserMessage(line)
+    expect("message" in result).toBe(true)
+    if ("message" in result) {
+      expect(result.message.type).toBe("user")
+      expect(result.message.message.role).toBe("user")
+      expect(result.message.message.content).toBe("Hello")
     }
   })
 
-  test("parses valid cancel request", () => {
-    const line = '{"jsonrpc":"2.0","id":2,"method":"cancel"}'
-    const result = parseRequest(line)
-    expect("request" in result).toBe(true)
-    if ("request" in result) {
-      expect(result.request.method).toBe("cancel")
+  test("parses user message with session_id", () => {
+    const line = '{"type":"user","message":{"role":"user","content":"Hello"},"session_id":"sess_123"}'
+    const result = parseUserMessage(line)
+    expect("message" in result).toBe(true)
+    if ("message" in result) {
+      expect(result.message.session_id).toBe("sess_123")
     }
   })
 
-  test("parses valid status request", () => {
-    const line = '{"jsonrpc":"2.0","id":"abc","method":"status"}'
-    const result = parseRequest(line)
-    expect("request" in result).toBe(true)
-    if ("request" in result) {
-      expect(result.request.id).toBe("abc")
-      expect(result.request.method).toBe("status")
+  test("parses user message with content block array", () => {
+    const line = '{"type":"user","message":{"role":"user","content":[{"type":"text","text":"Hello"},{"type":"text","text":"World"}]}}'
+    const result = parseUserMessage(line)
+    expect("message" in result).toBe(true)
+    if ("message" in result) {
+      expect(Array.isArray(result.message.message.content)).toBe(true)
     }
   })
 
   test("returns error for invalid JSON", () => {
-    const result = parseRequest("not json")
+    const result = parseUserMessage("not json")
     expect("error" in result).toBe(true)
     if ("error" in result) {
-      expect(result.error.error?.code).toBe(ErrorCodes.PARSE_ERROR)
+      expect(result.error).toContain("Parse error")
     }
   })
 
-  test("returns error for invalid request structure", () => {
-    const result = parseRequest('{"foo":"bar"}')
-    expect("error" in result).toBe(true)
-    if ("error" in result) {
-      expect(result.error.error?.code).toBe(ErrorCodes.INVALID_REQUEST)
-    }
-  })
-
-  test("returns error for missing jsonrpc version", () => {
-    const result = parseRequest('{"id":1,"method":"run"}')
+  test("returns error for wrong message type", () => {
+    const result = parseUserMessage('{"type":"assistant","message":{}}')
     expect("error" in result).toBe(true)
   })
 
-  test("returns error for invalid method", () => {
-    const result = parseRequest('{"jsonrpc":"2.0","id":1,"method":"invalid"}')
+  test("returns error for missing message field", () => {
+    const result = parseUserMessage('{"type":"user"}')
+    expect("error" in result).toBe(true)
+  })
+
+  test("returns error for wrong role", () => {
+    const result = parseUserMessage('{"type":"user","message":{"role":"assistant","content":"Hi"}}')
     expect("error" in result).toBe(true)
   })
 })
 
-describe("validateRunParams", () => {
-  test("validates correct params", () => {
-    const result = validateRunParams({ prompt: "Hello world" })
-    expect("params" in result).toBe(true)
-    if ("params" in result) {
-      expect(result.params.prompt).toBe("Hello world")
+describe("getPromptFromUserMessage", () => {
+  test("extracts string content", () => {
+    const message: UserMessage = {
+      type: "user",
+      message: { role: "user", content: "Hello world" },
     }
+    expect(getPromptFromUserMessage(message)).toBe("Hello world")
   })
 
-  test("validates params with session_id", () => {
-    const result = validateRunParams({ prompt: "Hello", session_id: "sess_123" })
-    expect("params" in result).toBe(true)
-    if ("params" in result) {
-      expect(result.params.session_id).toBe("sess_123")
+  test("extracts text from content block array", () => {
+    const message: UserMessage = {
+      type: "user",
+      message: {
+        role: "user",
+        content: [
+          { type: "text", text: "Hello" },
+          { type: "text", text: "World" },
+        ],
+      },
     }
+    expect(getPromptFromUserMessage(message)).toBe("Hello\nWorld")
   })
 
-  test("returns error for missing prompt", () => {
-    const result = validateRunParams({})
-    expect("error" in result).toBe(true)
-  })
-
-  test("returns error for non-string prompt", () => {
-    const result = validateRunParams({ prompt: 123 })
-    expect("error" in result).toBe(true)
-  })
-
-  test("returns error for undefined params", () => {
-    const result = validateRunParams(undefined)
-    expect("error" in result).toBe(true)
+  test("ignores non-text blocks", () => {
+    const message: UserMessage = {
+      type: "user",
+      message: {
+        role: "user",
+        content: [
+          { type: "text", text: "Hello" },
+          { type: "tool_result", tool_use_id: "123", content: "result" },
+        ],
+      },
+    }
+    expect(getPromptFromUserMessage(message)).toBe("Hello")
   })
 })
 
@@ -158,63 +156,41 @@ describe("message builders", () => {
   })
 
   test("systemMessage creates system message", () => {
-    const msg = systemMessage("status", { running: true, request_id: 1 })
+    const msg = systemMessage("status", { running: true })
     expect(msg.type).toBe("system")
     expect(msg.subtype).toBe("status")
     expect(msg.running).toBe(true)
-    expect(msg.request_id).toBe(1)
-  })
-})
-
-describe("createResponse", () => {
-  test("wraps message in JSON-RPC envelope", () => {
-    const msg = assistantText("Hello", "claude-sonnet-4-20250514")
-    const response = createResponse(1, msg)
-    expect(response.jsonrpc).toBe("2.0")
-    expect(response.id).toBe(1)
-    expect(response.result).toBe(msg)
-    expect(response.error).toBeUndefined()
-  })
-})
-
-describe("createErrorResponse", () => {
-  test("creates error with code and message", () => {
-    const response = createErrorResponse(1, ErrorCodes.INTERNAL_ERROR, "Something broke")
-    expect(response.jsonrpc).toBe("2.0")
-    expect(response.id).toBe(1)
-    expect(response.error).toEqual({ code: ErrorCodes.INTERNAL_ERROR, message: "Something broke" })
-    expect(response.result).toBeUndefined()
-  })
-
-  test("creates error with data", () => {
-    const response = createErrorResponse(1, ErrorCodes.INVALID_PARAMS, "Bad params", { field: "prompt" })
-    expect(response.error?.data).toEqual({ field: "prompt" })
-  })
-
-  test("handles null id per JSON-RPC 2.0 spec", () => {
-    const response = createErrorResponse(null, ErrorCodes.PARSE_ERROR, "Parse error")
-    expect(response.id).toBeNull()
   })
 })
 
 describe("NDJSON format", () => {
-  test("response serializes to valid JSON", () => {
-    const response = createResponse(1, assistantText("Hello", "claude-sonnet-4-20250514"))
-    const json = JSON.stringify(response)
+  test("output messages serialize to valid JSON", () => {
+    const msg = assistantText("Hello", "claude-sonnet-4-20250514")
+    const json = JSON.stringify(msg)
     expect(() => JSON.parse(json)).not.toThrow()
   })
 
-  test("multiple responses can be joined with newlines", () => {
-    const responses = [
-      createResponse(1, assistantText("Hello", "claude-sonnet-4-20250514")),
-      createResponse(1, assistantText(" world", "claude-sonnet-4-20250514")),
-      createResponse(1, resultMessage("sess_1", "success", 1000, 1, { result: "Hello world", inputTokens: 10, outputTokens: 5 })),
+  test("multiple messages can be joined with newlines", () => {
+    const messages = [
+      assistantText("Hello", "claude-sonnet-4-20250514"),
+      assistantText(" world", "claude-sonnet-4-20250514"),
+      resultMessage("sess_1", "success", 1000, 1, { result: "Hello world", inputTokens: 10, outputTokens: 5 }),
     ]
-    const ndjson = responses.map((r) => JSON.stringify(r)).join("\n")
+    const ndjson = messages.map((m) => JSON.stringify(m)).join("\n")
     const lines = ndjson.split("\n")
     expect(lines.length).toBe(3)
     lines.forEach((line) => {
       expect(() => JSON.parse(line)).not.toThrow()
     })
+  })
+
+  test("user message round-trips through JSON", () => {
+    const input = '{"type":"user","message":{"role":"user","content":"Hello"},"session_id":"test"}'
+    const result = parseUserMessage(input)
+    expect("message" in result).toBe(true)
+    if ("message" in result) {
+      const roundTripped = JSON.stringify(result.message)
+      expect(JSON.parse(roundTripped)).toEqual(result.message)
+    }
   })
 })

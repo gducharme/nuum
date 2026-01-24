@@ -1,37 +1,38 @@
 /**
- * JSON-RPC server for miriad-code
+ * Claude Code SDK Protocol Server
  *
- * NDJSON over stdin/stdout with Claude Code SDK compatible messages.
+ * Raw NDJSON over stdin/stdout. Process stays alive between turns.
  */
 
 import * as readline from "readline"
 import { createStorage, initializeDefaultEntries, type Storage } from "../storage"
 import { runAgent, type AgentEvent, type AgentOptions } from "../agent"
 import {
-  parseRequest,
-  validateRunParams,
-  createResponse,
-  createErrorResponse,
+  parseUserMessage,
+  getPromptFromUserMessage,
   assistantText,
   assistantToolUse,
   toolResult,
   resultMessage,
   systemMessage,
-  ErrorCodes,
-  type JsonRpcRequest,
-  type JsonRpcResponse,
+  type OutputMessage,
+  type UserMessage,
 } from "./protocol"
 import { Log } from "../util/log"
 import { Config } from "../config"
 
-const log = Log.create({ service: "jsonrpc" })
+// Get the model ID for the reasoning tier (main agent)
+function getModelId(): string {
+  return Config.resolveModelTier("reasoning")
+}
 
-export interface JsonRpcServerOptions {
+const log = Log.create({ service: "server" })
+
+export interface ServerOptions {
   dbPath: string
 }
 
-interface RequestState {
-  id: string | number
+interface TurnState {
   sessionId: string
   abortController: AbortController
   model: string
@@ -39,12 +40,12 @@ interface RequestState {
   startTime: number
 }
 
-export class JsonRpcServer {
+export class Server {
   private storage: Storage
-  private currentRequest: RequestState | null = null
+  private currentTurn: TurnState | null = null
   private rl: readline.Interface | null = null
 
-  constructor(private options: JsonRpcServerOptions) {
+  constructor(private options: ServerOptions) {
     this.storage = createStorage(options.dbPath)
   }
 
@@ -68,193 +69,128 @@ export class JsonRpcServer {
       process.exit(0)
     })
 
-    log.info("JSON-RPC server started", { dbPath: this.options.dbPath })
+    log.info("server started", { dbPath: this.options.dbPath })
   }
 
   private async handleLine(line: string): Promise<void> {
     const trimmed = line.trim()
     if (!trimmed) return
 
-    const parseResult = parseRequest(trimmed)
+    const parseResult = parseUserMessage(trimmed)
     if ("error" in parseResult) {
-      this.send(parseResult.error)
+      this.send(systemMessage("error", { message: parseResult.error }))
       return
     }
 
-    await this.handleRequest(parseResult.request)
+    await this.handleUserMessage(parseResult.message)
   }
 
-  private async handleRequest(request: JsonRpcRequest): Promise<void> {
-    switch (request.method) {
-      case "run":
-        await this.handleRun(request)
-        break
-      case "cancel":
-        await this.handleCancel(request)
-        break
-      case "status":
-        await this.handleStatus(request)
-        break
-      default:
-        this.send(createErrorResponse(request.id, ErrorCodes.METHOD_NOT_FOUND, `Method not found: ${request.method}`))
-    }
-  }
-
-  private async handleRun(request: JsonRpcRequest): Promise<void> {
-    if (this.currentRequest) {
-      this.send(
-        createErrorResponse(request.id, ErrorCodes.ALREADY_RUNNING, "A request is already running", {
-          currentRequestId: this.currentRequest.id,
-        }),
-      )
+  private async handleUserMessage(userMessage: UserMessage): Promise<void> {
+    // For now, reject if a turn is already running
+    // TODO: Support out-of-turn message delivery
+    if (this.currentTurn) {
+      this.send(systemMessage("error", { message: "A turn is already running" }))
       return
     }
 
-    const paramsResult = validateRunParams(request.params)
-    if ("error" in paramsResult) {
-      this.send(createErrorResponse(request.id, ErrorCodes.INVALID_PARAMS, paramsResult.error))
-      return
-    }
-
-    const { prompt, session_id } = paramsResult.params
+    const sessionId = userMessage.session_id ?? `session_${Date.now()}`
+    const prompt = getPromptFromUserMessage(userMessage)
     const abortController = new AbortController()
-    const sessionId = session_id ?? `session_${Date.now()}`
 
-    this.currentRequest = {
-      id: request.id,
+    this.currentTurn = {
       sessionId,
       abortController,
-      model: Config.model ?? "unknown",
+      model: getModelId(),
       numTurns: 0,
       startTime: Date.now(),
     }
 
-    log.info("starting run", { requestId: request.id, sessionId, promptLength: prompt.length })
+    log.info("starting turn", { sessionId, promptLength: prompt.length })
 
     try {
       const agentOptions: AgentOptions = {
         storage: this.storage,
         verbose: false,
         abortSignal: abortController.signal,
-        onEvent: (event) => this.handleAgentEvent(request.id, event),
+        onEvent: (event) => this.handleAgentEvent(event),
       }
 
       const result = await runAgent(prompt, agentOptions)
 
       if (!abortController.signal.aborted) {
         this.send(
-          createResponse(
-            request.id,
-            resultMessage(sessionId, "success", Date.now() - this.currentRequest.startTime, this.currentRequest.numTurns, {
-              result: result.response,
-              inputTokens: result.usage.inputTokens,
-              outputTokens: result.usage.outputTokens,
-            }),
-          ),
+          resultMessage(sessionId, "success", Date.now() - this.currentTurn.startTime, this.currentTurn.numTurns, {
+            result: result.response,
+            inputTokens: result.usage.inputTokens,
+            outputTokens: result.usage.outputTokens,
+          }),
         )
       }
     } catch (error) {
       if (abortController.signal.aborted) return
 
       const message = error instanceof Error ? error.message : String(error)
-      log.error("run failed", { requestId: request.id, error: message })
+      log.error("turn failed", { sessionId, error: message })
 
       this.send(
-        createResponse(
-          request.id,
-          resultMessage(sessionId, "error", Date.now() - (this.currentRequest?.startTime ?? Date.now()), this.currentRequest?.numTurns ?? 0, {
-            result: message,
-          }),
-        ),
+        resultMessage(sessionId, "error", Date.now() - (this.currentTurn?.startTime ?? Date.now()), this.currentTurn?.numTurns ?? 0, {
+          result: message,
+        }),
       )
     } finally {
-      this.currentRequest = null
+      this.currentTurn = null
     }
   }
 
-  private handleAgentEvent(requestId: string | number, event: AgentEvent): void {
-    if (!this.currentRequest) return
-    const { model } = this.currentRequest
+  private handleAgentEvent(event: AgentEvent): void {
+    if (!this.currentTurn) return
+    const { model } = this.currentTurn
 
     switch (event.type) {
       case "assistant":
-        this.send(createResponse(requestId, assistantText(event.content, model)))
+        this.send(assistantText(event.content, model))
         break
 
       case "tool_call":
         if (event.toolName && event.toolCallId) {
-          this.send(createResponse(requestId, assistantToolUse(event.toolCallId, event.toolName, event.toolArgs ?? {}, model)))
+          this.send(assistantToolUse(event.toolCallId, event.toolName, event.toolArgs ?? {}, model))
         }
         break
 
       case "tool_result":
         if (event.toolCallId) {
-          this.currentRequest.numTurns++
-          this.send(
-            createResponse(requestId, systemMessage("tool_result", { tool_result: toolResult(event.toolCallId, event.content) })),
-          )
+          this.currentTurn.numTurns++
+          this.send(systemMessage("tool_result", { tool_result: toolResult(event.toolCallId, event.content) }))
         }
         break
 
       case "error":
-        this.send(createResponse(requestId, systemMessage("error", { message: event.content })))
+        this.send(systemMessage("error", { message: event.content }))
         break
 
       case "consolidation":
         if (event.consolidationResult?.ran) {
           this.send(
-            createResponse(
-              requestId,
-              systemMessage("consolidation", {
-                entries_created: event.consolidationResult.entriesCreated,
-                entries_updated: event.consolidationResult.entriesUpdated,
-                entries_archived: event.consolidationResult.entriesArchived,
-                summary: event.consolidationResult.summary,
-              }),
-            ),
+            systemMessage("consolidation", {
+              entries_created: event.consolidationResult.entriesCreated,
+              entries_updated: event.consolidationResult.entriesUpdated,
+              entries_archived: event.consolidationResult.entriesArchived,
+              summary: event.consolidationResult.summary,
+            }),
           )
         }
         break
     }
   }
 
-  private async handleCancel(request: JsonRpcRequest): Promise<void> {
-    if (!this.currentRequest) {
-      this.send(createErrorResponse(request.id, ErrorCodes.NOT_RUNNING, "No request is currently running"))
-      return
-    }
-
-    const { id: cancelledId, sessionId, startTime, numTurns, abortController } = this.currentRequest
-    this.currentRequest = null
-    abortController.abort()
-
-    log.info("request cancelled", { cancelledRequestId: cancelledId })
-
-    this.send(createResponse(cancelledId, resultMessage(sessionId, "cancelled", Date.now() - startTime, numTurns)))
-    this.send(createResponse(request.id, systemMessage("status", { running: false })))
-  }
-
-  private async handleStatus(request: JsonRpcRequest): Promise<void> {
-    this.send(
-      createResponse(
-        request.id,
-        systemMessage("status", {
-          running: this.currentRequest !== null,
-          request_id: this.currentRequest?.id,
-          session_id: this.currentRequest?.sessionId,
-        }),
-      ),
-    )
-  }
-
-  private send(response: JsonRpcResponse): void {
-    process.stdout.write(JSON.stringify(response) + "\n")
+  private send(message: OutputMessage): void {
+    process.stdout.write(JSON.stringify(message) + "\n")
   }
 }
 
-export async function runJsonRpc(options: JsonRpcServerOptions): Promise<void> {
-  const server = new JsonRpcServer(options)
+export async function runServer(options: ServerOptions): Promise<void> {
+  const server = new Server(options)
   await server.start()
 }
 
-export type { JsonRpcRequest, JsonRpcResponse } from "./protocol"
+export type { UserMessage, OutputMessage } from "./protocol"

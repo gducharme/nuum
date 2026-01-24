@@ -1,46 +1,14 @@
 /**
- * JSON-RPC protocol types for miriad-code
+ * Claude Code SDK Protocol
  *
- * Uses Claude Code SDK compatible message types.
+ * Raw NDJSON over stdin/stdout - no JSON-RPC envelope.
  * See docs/claude-code-protocol.md for the specification.
  */
 
 import { z } from "zod"
 
 // =============================================================================
-// JSON-RPC Request/Response Envelope
-// =============================================================================
-
-export const RunParamsSchema = z.object({
-  prompt: z.string(),
-  session_id: z.string().optional(),
-})
-
-export const JsonRpcRequestSchema = z.object({
-  jsonrpc: z.literal("2.0"),
-  id: z.union([z.string(), z.number()]),
-  method: z.enum(["run", "cancel", "status"]),
-  params: z.unknown().optional(),
-})
-
-export type JsonRpcRequest = z.infer<typeof JsonRpcRequestSchema>
-export type RunParams = z.infer<typeof RunParamsSchema>
-
-export interface JsonRpcResponse {
-  jsonrpc: "2.0"
-  id: string | number | null
-  result?: StreamMessage
-  error?: JsonRpcError
-}
-
-export interface JsonRpcError {
-  code: number
-  message: string
-  data?: unknown
-}
-
-// =============================================================================
-// Content Blocks (Claude Code SDK compatible)
+// Content Blocks
 // =============================================================================
 
 export interface TextBlock {
@@ -65,7 +33,50 @@ export interface ToolResultBlock {
 export type ContentBlock = TextBlock | ToolUseBlock | ToolResultBlock
 
 // =============================================================================
-// Stream Messages (Claude Code SDK compatible)
+// Input Messages (stdin)
+// =============================================================================
+
+export const UserMessageSchema = z.object({
+  type: z.literal("user"),
+  message: z.object({
+    role: z.literal("user"),
+    content: z.union([z.string(), z.array(z.unknown())]),
+  }),
+  session_id: z.string().optional(),
+})
+
+export type UserMessage = z.infer<typeof UserMessageSchema>
+
+export function parseUserMessage(line: string): { message: UserMessage } | { error: string } {
+  let parsed: unknown
+  try {
+    parsed = JSON.parse(line)
+  } catch {
+    return { error: "Parse error: invalid JSON" }
+  }
+
+  const result = UserMessageSchema.safeParse(parsed)
+  if (!result.success) {
+    return { error: `Invalid message: ${result.error.message}` }
+  }
+
+  return { message: result.data }
+}
+
+export function getPromptFromUserMessage(message: UserMessage): string {
+  const content = message.message.content
+  if (typeof content === "string") {
+    return content
+  }
+  // Handle content block array - extract text from text blocks
+  const textBlocks = content.filter((block): block is { type: "text"; text: string } => 
+    typeof block === "object" && block !== null && (block as { type?: string }).type === "text"
+  )
+  return textBlocks.map(b => b.text).join("\n")
+}
+
+// =============================================================================
+// Output Messages (stdout)
 // =============================================================================
 
 export interface AssistantMessage {
@@ -97,70 +108,7 @@ export interface SystemMessage {
   [key: string]: unknown
 }
 
-export type StreamMessage = AssistantMessage | ResultMessage | SystemMessage
-
-// =============================================================================
-// Error Codes
-// =============================================================================
-
-export const ErrorCodes = {
-  PARSE_ERROR: -32700,
-  INVALID_REQUEST: -32600,
-  METHOD_NOT_FOUND: -32601,
-  INVALID_PARAMS: -32602,
-  INTERNAL_ERROR: -32603,
-  ALREADY_RUNNING: -32001,
-  NOT_RUNNING: -32002,
-  CANCELLED: -32003,
-} as const
-
-// =============================================================================
-// Helper Functions
-// =============================================================================
-
-export function createResponse(id: string | number, result: StreamMessage): JsonRpcResponse {
-  return { jsonrpc: "2.0", id, result }
-}
-
-export function createErrorResponse(
-  id: string | number | null,
-  code: number,
-  message: string,
-  data?: unknown,
-): JsonRpcResponse {
-  return { jsonrpc: "2.0", id, error: { code, message, data } }
-}
-
-export function parseRequest(line: string): { request: JsonRpcRequest } | { error: JsonRpcResponse } {
-  let parsed: unknown
-  try {
-    parsed = JSON.parse(line)
-  } catch {
-    return { error: createErrorResponse(null, ErrorCodes.PARSE_ERROR, "Parse error: invalid JSON") }
-  }
-
-  const result = JsonRpcRequestSchema.safeParse(parsed)
-  if (!result.success) {
-    return {
-      error: createErrorResponse(
-        (parsed as { id?: unknown })?.id ?? null,
-        ErrorCodes.INVALID_REQUEST,
-        "Invalid request",
-        result.error.format(),
-      ),
-    }
-  }
-
-  return { request: result.data }
-}
-
-export function validateRunParams(params: unknown): { params: RunParams } | { error: string } {
-  const result = RunParamsSchema.safeParse(params)
-  if (!result.success) {
-    return { error: result.error.format()._errors.join(", ") || "Invalid params" }
-  }
-  return { params: result.data }
-}
+export type OutputMessage = AssistantMessage | ResultMessage | SystemMessage
 
 // =============================================================================
 // Message Builders
