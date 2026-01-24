@@ -19,6 +19,9 @@ import {
   type TemporalSummary,
   type TemporalSummaryInsert,
 } from "./schema"
+import { Log } from "../util/log"
+
+const log = Log.create({ service: "temporal-storage" })
 
 export interface TemporalSearchParams {
   query?: string
@@ -49,6 +52,11 @@ export function createTemporalStorage(db: DrizzleDB | AnyDrizzleDB): TemporalSto
   return {
     async appendMessage(msg: TemporalMessageInsert): Promise<void> {
       await db.insert(temporalMessages).values(msg)
+      log.info("persisted message", {
+        id: msg.id,
+        type: msg.type,
+        excerpt: msg.content.slice(0, 50),
+      })
     },
 
     async createSummary(summary: TemporalSummaryInsert): Promise<void> {

@@ -18,6 +18,9 @@ import type {
 } from "ai"
 import type { TemporalMessage, TemporalSummary } from "../storage/schema"
 import { isCoveredBySummary, isSubsumedByHigherOrder } from "./coverage"
+import { Log } from "../util/log"
+
+const log = Log.create({ service: "temporal-view" })
 
 export interface TemporalView {
   /** Summaries included in the view, sorted chronologically */
@@ -136,7 +139,15 @@ export function reconstructHistoryAsTurns(view: TemporalView): CoreMessage[] {
 
     if (summaryKey && (!messageKey || summaryKey < messageKey)) {
       // Insert summary as an assistant message (represents past assistant work)
-      const observations = JSON.parse(summary.keyObservations) as string[]
+      let observations: string[] = []
+      try {
+        observations = JSON.parse(summary.keyObservations) as string[]
+      } catch (error) {
+        log.error("failed to parse summary keyObservations", {
+          summaryId: summary.id,
+          error: error instanceof Error ? error.message : String(error),
+        })
+      }
       let summaryContent = `[summary from:${summary.startId} to:${summary.endId}]\n${summary.narrative}`
       if (observations.length > 0) {
         summaryContent += "\n\nKey points:\n" + observations.map(o => `- ${o}`).join("\n")
@@ -206,8 +217,11 @@ function processMessageForTurn(
             toolName: parsed.name,
             args: parsed.args as Record<string, unknown>,
           })
-        } catch {
-          // Skip malformed tool calls
+        } catch (error) {
+          log.error("failed to parse tool call message", {
+            messageId: toolCallMsg.id,
+            error: error instanceof Error ? error.message : String(error),
+          })
         }
         nextIdx++
       }
@@ -263,10 +277,86 @@ function processMessageForTurn(
       return { turns, nextIdx }
     }
 
-    case "tool_call":
+    case "tool_call": {
+      // Tool calls without a preceding assistant message (model made tool calls without text)
+      // Process them as a standalone assistant turn with tool calls
+      const toolCalls: ToolCallPart[] = []
+      const toolResults: ToolResultPart[] = []
+      let nextIdx = currentIdx
+      let firstMessageId = message.id
+      let lastMessageId = message.id
+
+      // Consume all consecutive tool_call messages
+      while (nextIdx < allMessages.length && allMessages[nextIdx].type === "tool_call") {
+        const toolCallMsg = allMessages[nextIdx]
+        lastMessageId = toolCallMsg.id
+        try {
+          const parsed = JSON.parse(toolCallMsg.content) as { name: string; args: unknown; toolCallId?: string }
+          toolCalls.push({
+            type: "tool-call",
+            toolCallId: parsed.toolCallId || `call_${nextIdx}`,
+            toolName: parsed.name,
+            args: parsed.args as Record<string, unknown>,
+          })
+        } catch (error) {
+          log.error("failed to parse tool call message", {
+            messageId: toolCallMsg.id,
+            error: error instanceof Error ? error.message : String(error),
+          })
+        }
+        nextIdx++
+      }
+
+      // Consume corresponding tool_result messages
+      while (nextIdx < allMessages.length && allMessages[nextIdx].type === "tool_result") {
+        const toolResultMsg = allMessages[nextIdx]
+        lastMessageId = toolResultMsg.id
+        const correspondingCall = toolCalls[toolResults.length]
+        if (correspondingCall) {
+          toolResults.push({
+            type: "tool-result",
+            toolCallId: correspondingCall.toolCallId,
+            toolName: correspondingCall.toolName,
+            result: toolResultMsg.content,
+          })
+        }
+        nextIdx++
+      }
+
+      if (toolCalls.length > 0) {
+        // Create assistant message with tool calls (no text content)
+        const idPrefix = firstMessageId === lastMessageId
+          ? `[id:${firstMessageId}]`
+          : `[id:${firstMessageId}...${lastMessageId}]`
+        const assistantContent: (ToolCallPart | { type: "text"; text: string })[] = [
+          { type: "text", text: idPrefix },
+          ...toolCalls,
+        ]
+
+        const assistantMsg: CoreAssistantMessage = {
+          role: "assistant",
+          content: assistantContent,
+        }
+        turns.push(assistantMsg)
+
+        // Tool results
+        if (toolResults.length > 0) {
+          const toolMsg: CoreToolMessage = {
+            role: "tool",
+            content: toolResults,
+          }
+          turns.push(toolMsg)
+        }
+      }
+
+      return { turns, nextIdx }
+    }
+
     case "tool_result":
-      // These should be consumed by the assistant case above
-      // If we hit them standalone, skip (orphaned)
+      // Tool result without preceding tool_call - this is truly orphaned
+      log.warn("orphaned tool_result in history reconstruction", {
+        messageId: message.id,
+      })
       return { turns: [], nextIdx: currentIdx + 1 }
 
     case "system":
@@ -295,7 +385,15 @@ export function renderTemporalView(view: TemporalView): string {
 
   // Render summaries (oldest first)
   for (const summary of view.summaries) {
-    const observations = JSON.parse(summary.keyObservations) as string[]
+    let observations: string[] = []
+    try {
+      observations = JSON.parse(summary.keyObservations) as string[]
+    } catch (error) {
+      log.error("failed to parse summary keyObservations", {
+        summaryId: summary.id,
+        error: error instanceof Error ? error.message : String(error),
+      })
+    }
     parts.push(
       `<summary order="${summary.orderNum}" from="${summary.startId}" to="${summary.endId}">`,
     )

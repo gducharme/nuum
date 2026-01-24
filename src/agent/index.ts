@@ -344,6 +344,9 @@ export async function runAgent(
   const { storage, onEvent, abortSignal } = options
   const sessionId = Identifier.ascending("session")
 
+  // Initialize MCP servers (loads config and connects)
+  await initializeMcp()
+
   // Get the model
   const model = Provider.getModelForTier("reasoning")
 
@@ -352,13 +355,21 @@ export async function runAgent(
 
   // Log user message to temporal
   const userMessageId = Identifier.ascending("message")
-  await storage.temporal.appendMessage({
-    id: userMessageId,
-    type: "user",
-    content: prompt,
-    tokenEstimate: estimateTokens(prompt),
-    createdAt: new Date().toISOString(),
-  })
+  try {
+    await storage.temporal.appendMessage({
+      id: userMessageId,
+      type: "user",
+      content: prompt,
+      tokenEstimate: estimateTokens(prompt),
+      createdAt: new Date().toISOString(),
+    })
+  } catch (error) {
+    log.error("failed to persist user message", {
+      messageId: userMessageId,
+      error: error instanceof Error ? error.message : String(error),
+    })
+    throw error
+  }
 
   // Build tools with execute callbacks wired up
   const tools = buildTools(storage, sessionId, userMessageId, abortSignal)
@@ -388,15 +399,24 @@ export async function runAgent(
     onText: async (text) => {
       // Only log if this is new text (avoid double-logging on final turn)
       if (text !== lastLoggedText) {
-        lastLoggedText = text
         const assistantMessageId = Identifier.ascending("message")
-        await storage.temporal.appendMessage({
-          id: assistantMessageId,
-          type: "assistant",
-          content: text,
-          tokenEstimate: estimateTokens(text),
-          createdAt: new Date().toISOString(),
-        })
+        try {
+          await storage.temporal.appendMessage({
+            id: assistantMessageId,
+            type: "assistant",
+            content: text,
+            tokenEstimate: estimateTokens(text),
+            createdAt: new Date().toISOString(),
+          })
+          // Only mark as logged after successful persistence
+          lastLoggedText = text
+        } catch (error) {
+          log.error("failed to persist assistant message", {
+            messageId: assistantMessageId,
+            error: error instanceof Error ? error.message : String(error),
+          })
+          throw error
+        }
         onEvent?.({ type: "assistant", content: text })
       }
     },
@@ -404,13 +424,23 @@ export async function runAgent(
     // Log tool calls to temporal and emit event
     onToolCall: async (toolCallId, toolName, args) => {
       const toolCallMsgId = Identifier.ascending("message")
-      await storage.temporal.appendMessage({
-        id: toolCallMsgId,
-        type: "tool_call",
-        content: JSON.stringify({ name: toolName, args }),
-        tokenEstimate: estimateTokens(JSON.stringify(args)),
-        createdAt: new Date().toISOString(),
-      })
+      try {
+        await storage.temporal.appendMessage({
+          id: toolCallMsgId,
+          type: "tool_call",
+          content: JSON.stringify({ name: toolName, args, toolCallId }),
+          tokenEstimate: estimateTokens(JSON.stringify(args)),
+          createdAt: new Date().toISOString(),
+        })
+      } catch (error) {
+        log.error("failed to persist tool call", {
+          messageId: toolCallMsgId,
+          toolName,
+          toolCallId,
+          error: error instanceof Error ? error.message : String(error),
+        })
+        throw error
+      }
       onEvent?.({
         type: "tool_call",
         content: `${toolName}(${JSON.stringify(args).slice(0, 100)}...)`,
@@ -422,13 +452,23 @@ export async function runAgent(
     // Log tool results to temporal and emit event
     onToolResult: async (toolCallId, toolName, toolResult) => {
       const toolResultMsgId = Identifier.ascending("message")
-      await storage.temporal.appendMessage({
-        id: toolResultMsgId,
-        type: "tool_result",
-        content: toolResult,
-        tokenEstimate: estimateTokens(toolResult),
-        createdAt: new Date().toISOString(),
-      })
+      try {
+        await storage.temporal.appendMessage({
+          id: toolResultMsgId,
+          type: "tool_result",
+          content: toolResult,
+          tokenEstimate: estimateTokens(toolResult),
+          createdAt: new Date().toISOString(),
+        })
+      } catch (error) {
+        log.error("failed to persist tool result", {
+          messageId: toolResultMsgId,
+          toolName,
+          toolCallId,
+          error: error instanceof Error ? error.message : String(error),
+        })
+        throw error
+      }
       onEvent?.({
         type: "tool_result",
         content: toolResult.slice(0, 200) + (toolResult.length > 200 ? "..." : ""),
