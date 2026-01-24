@@ -248,7 +248,7 @@ function buildConsolidationTools(
       const toolResult = await LTMReparentTool.definition.execute(args, createLTMContext(toolCallId))
       const entryUpdated = toolResult.output.startsWith("Moved entry:")
       if (entryUpdated) {
-        activity.ltmCurator.ltmOperation("reparent", args.slug, `→ ${args.newParentPath}`)
+        activity.ltmCurator.ltmOperation("reparent", args.slug, `→ ${args.newParentSlug ?? "root"}`)
       }
       const result: ConsolidationToolResult = { output: toolResult.output, done: false, entryUpdated }
       results.set(toolCallId, result)

@@ -4,7 +4,7 @@
   "description": "AI coding agent with continuous memory - infinite context across sessions",
   "type": "module",
   "bin": {
-    "nuum": "./dist/cli/index.js"
+    "nuum": "./dist/index.js"
   },
   "files": [
     "dist",
@@ -15,7 +15,8 @@
     "dev": "bun run ./src/cli/index.ts",
     "typecheck": "tsc --noEmit",
     "test": "bun test",
-    "prepublishOnly": "bun run build && bun run typecheck"
+    "prepublishOnly": "bun run build && bun run typecheck",
+    "release": "bun run build && bun run typecheck && npm publish --access public"
   },
   "keywords": [
     "ai",
@@ -30,7 +31,7 @@
   "license": "MIT",
   "repository": {
     "type": "git",
-    "url": "https://github.com/miriad-systems/nuum.git"
+    "url": "https://github.com/simen/miriad-code.git"
   },
   "engines": {
     "node": ">=18.0.0"

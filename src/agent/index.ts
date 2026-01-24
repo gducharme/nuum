@@ -39,7 +39,7 @@ import {
 } from "../tool"
 import { runAgentLoop, AgentLoopCancelledError } from "./loop"
 import { buildAgentContext } from "../context"
-import { runMemoryCuration, type MemoryCurationResult } from "../memory"
+import { runMemoryCuration, type MemoryCurationResult, type ConsolidationResult, type CompactionResult } from "../memory"
 import { Log } from "../util/log"
 import { activity } from "../util/activity-log"
 import { Mcp } from "../mcp"
@@ -601,8 +601,9 @@ export async function runAgent(
           throw error
         }
         onEvent?.({ type: "user", content })
+        return content
       }
-      return content
+      return null
     },
   })
 

@@ -19,6 +19,9 @@ import {
   type CompactionResult,
 } from "../temporal"
 import { runConsolidationWorker, type ConsolidationResult } from "../ltm"
+
+// Re-export types for consumers
+export type { CompactionResult, ConsolidationResult }
 import { activity } from "../util/activity-log"
 
 /**

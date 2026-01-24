@@ -121,7 +121,7 @@ function createStorageFromDb(db: DrizzleDB): StorageWithDb {
     present: createPresentStorage(db),
     ltm: createLTMStorage(db),
     workers: createWorkerStorage(db),
-    session: createSessionStorage(db),
+    session: createSessionStorage(db as any),
     _db: db,
   }
 }

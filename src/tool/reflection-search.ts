@@ -173,8 +173,9 @@ function wrapLTMTool(
     parameters: ltmTool.definition.parameters,
     execute: async (args, { toolCallId }) => {
       activity.reflection.toolCall(toolName, args)
+      // eslint-disable-next-line @typescript-eslint/no-explicit-any
       const toolResult = await ltmTool.definition.execute(
-        args,
+        args as any,
         createLTMContext(storage, toolCallId),
       )
       activity.reflection.toolResult(toolName, summarizeResult(toolResult.output))
