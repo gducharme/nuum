@@ -48,7 +48,7 @@ import {
   renderCompactTree,
   type LTMToolContext,
 } from "../tool"
-import { buildSystemPrompt, buildConversationHistory } from "../agent"
+import { buildAgentContext } from "../context"
 import { runAgentLoop, stopOnTool } from "../agent/loop"
 
 const log = Log.create({ service: "consolidation-agent" })
@@ -396,11 +396,8 @@ export async function runConsolidation(
   result.ran = true
   log.info("starting consolidation", { messageCount: messages.length })
 
-  // Use the main agent's system prompt for prompt caching benefits
-  const { prompt: systemPrompt } = await buildSystemPrompt(storage)
-
-  // Get conversation history as proper turns (same as main agent sees)
-  const historyTurns = await buildConversationHistory(storage)
+  // Build agent context (shared with all workloads)
+  const ctx = await buildAgentContext(storage)
 
   // Find recently updated entries (updated in the last hour)
   const oneHourAgo = new Date(Date.now() - 60 * 60 * 1000).toISOString()
@@ -421,14 +418,14 @@ export async function runConsolidation(
   // Initial messages: conversation history + LTM review task as user message
   // (only the top-level system prompt can use system role)
   const initialMessages: CoreMessage[] = [
-    ...historyTurns,
+    ...ctx.historyTurns,
     { role: "user", content: `[SYSTEM TASK]\n\n${reviewTurnContent}` },
   ]
 
   // Run the agent loop using the generic loop abstraction
   const loopResult = await runAgentLoop({
     model,
-    systemPrompt,
+    systemPrompt: ctx.systemPrompt,
     initialMessages,
     tools,
     maxTokens: 2048,

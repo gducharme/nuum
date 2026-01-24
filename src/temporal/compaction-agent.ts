@@ -22,7 +22,7 @@ import type { TemporalMessage, TemporalSummary, TemporalSummaryInsert } from "..
 import { Provider } from "../provider"
 import { Identifier } from "../id"
 import { Log } from "../util/log"
-import { buildSystemPrompt, buildConversationHistory } from "../agent"
+import { buildAgentContext, buildConversationHistory } from "../context"
 import { runAgentLoop, stopOnTool } from "../agent/loop"
 import { estimateSummaryTokens, type SummaryInput } from "./summary"
 
@@ -305,8 +305,9 @@ export async function runCompaction(
     target: config.compactionTarget,
   })
 
-  // Use same system prompt as main agent for cache efficiency
-  const { prompt: systemPrompt } = await buildSystemPrompt(storage)
+  // Build agent context (shared with all workloads)
+  // Note: we only use systemPrompt here; history is rebuilt each turn
+  const ctx = await buildAgentContext(storage)
 
   // Get model (use workhorse tier - good balance of capability and cost)
   const model = Provider.getModelForTier("workhorse")
@@ -353,7 +354,7 @@ export async function runCompaction(
     // Run the inner agent loop using the generic loop abstraction
     const loopResult = await runAgentLoop({
       model,
-      systemPrompt,
+      systemPrompt: ctx.systemPrompt,
       initialMessages,
       tools,
       maxTokens: 4096,

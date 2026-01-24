@@ -16,7 +16,6 @@ import type {
 } from "ai"
 import { z } from "zod"
 import { Provider } from "../provider"
-import { Config } from "../config"
 import type { Storage, Task } from "../storage"
 import { Identifier } from "../id"
 import {
@@ -33,8 +32,6 @@ import {
   type LTMToolContext,
 } from "../tool"
 import {
-  buildTemporalView,
-  reconstructHistoryAsTurns,
   shouldTriggerCompaction,
   runCompactionWorker,
   getMessagesToCompact,
@@ -42,11 +39,21 @@ import {
 } from "../temporal"
 import { runConsolidationWorker, type ConsolidationResult } from "../ltm"
 import { runAgentLoop, AgentLoopCancelledError } from "./loop"
+import { buildAgentContext } from "../context"
 import { Log } from "../util/log"
 
 const log = Log.create({ service: "agent" })
 
 const MAX_TURNS = 50
+
+/**
+ * Estimate token count from text (rough approximation).
+ * ~4 chars per token for English text.
+ * Used for temporal message logging.
+ */
+function estimateTokens(text: string): number {
+  return Math.ceil(text.length / 4)
+}
 
 export interface AgentOptions {
   storage: Storage
@@ -71,113 +78,6 @@ export interface AgentResult {
     inputTokens: number
     outputTokens: number
   }
-}
-
-/**
- * Estimate token count from text (rough approximation).
- * ~4 chars per token for English text.
- */
-function estimateTokens(text: string): number {
-  return Math.ceil(text.length / 4)
-}
-
-/**
- * Build the system prompt (identity, behavior, instructions only).
- * Temporal history is now reconstructed as proper conversation turns.
- * Exported so background agents (consolidation, etc.) can reuse it for prompt caching.
- */
-export async function buildSystemPrompt(storage: Storage): Promise<{ prompt: string; tokens: number }> {
-  // Get identity and behavior from LTM
-  const identity = await storage.ltm.read("identity")
-  const behavior = await storage.ltm.read("behavior")
-
-  // Get present state
-  const present = await storage.present.get()
-
-  // Build system prompt (no temporal history - that goes in conversation turns)
-  let prompt = `You are a coding assistant with persistent memory.
-
-Your memory spans across conversations, allowing you to remember past decisions, track ongoing projects, and learn user preferences.
-
-`
-
-  // Add identity
-  if (identity) {
-    prompt += `<identity>
-${identity.body}
-</identity>
-
-`
-  }
-
-  // Add behavior
-  if (behavior) {
-    prompt += `<behavior>
-${behavior.body}
-</behavior>
-
-`
-  }
-
-  // Add present state
-  prompt += `<present_state>
-<mission>${present.mission ?? "(none)"}</mission>
-<status>${present.status ?? "(none)"}</status>
-<tasks>
-`
-  for (const task of present.tasks) {
-    prompt += `  <task status="${task.status}">${task.content}</task>\n`
-  }
-  prompt += `</tasks>
-</present_state>
-
-`
-
-  // Add available tools description
-  prompt += `You have access to tools for file operations (read, write, edit, bash, glob, grep).
-Use tools to accomplish tasks. Always explain what you're doing.
-
-When you're done with a task, update the present state if appropriate.
-
-## Long-Term Memory
-
-You have a knowledge base managed by a background process. It extracts important information from conversations and maintains organized knowledge.
-
-To recall information:
-- ltm_glob(pattern) - browse the knowledge tree structure
-- ltm_search(query) - find relevant entries
-- ltm_read(slug) - read a specific entry
-
-Knowledge entries may contain [[slug]] cross-references to related entries. Follow these links to explore connected knowledge.
-
-You do NOT manage this memory directly. Focus on your work - memory happens automatically.
-Your /identity and /behavior entries are always visible to guide you.
-`
-
-  return { prompt, tokens: estimateTokens(prompt) }
-}
-
-/**
- * Build the conversation history as proper CoreMessage[] turns.
- * This replaces the old approach of stuffing history into the system prompt.
- */
-export async function buildConversationHistory(storage: Storage): Promise<CoreMessage[]> {
-  const config = Config.get()
-  const temporalBudget = config.tokenBudgets.temporalBudget
-
-  // Fetch messages and summaries for temporal view
-  const allMessages = await storage.temporal.getMessages()
-  const allSummaries = await storage.temporal.getSummaries()
-
-  // Build temporal view that fits within budget
-  const temporalView = buildTemporalView({
-    budget: temporalBudget,
-    messages: allMessages,
-    summaries: allSummaries,
-  })
-
-  // Reconstruct as proper conversation turns
-  return reconstructHistoryAsTurns(temporalView)
 }
 
 /**
@@ -369,6 +269,10 @@ function buildTools(
  */
 export { AgentLoopCancelledError as AgentCancelledError } from "./loop"
 
+// Re-export context building functions for backward compatibility
+// Prefer importing directly from "../context" for new code
+export { buildSystemPrompt, buildConversationHistory, buildAgentContext } from "../context"
+
 /**
  * Run the main agent loop.
  */
@@ -382,11 +286,8 @@ export async function runAgent(
   // Get the model
   const model = Provider.getModelForTier("reasoning")
 
-  // Build system prompt (identity, behavior, instructions - cacheable)
-  const { prompt: systemPrompt } = await buildSystemPrompt(storage)
-
-  // Build conversation history as proper turns
-  const historyTurns = await buildConversationHistory(storage)
+  // Build agent context (shared with all workloads)
+  const ctx = await buildAgentContext(storage)
 
   // Log user message to temporal
   const userMessageId = Identifier.ascending("message")
@@ -403,7 +304,7 @@ export async function runAgent(
 
   // Initialize messages with history + current user prompt
   const initialMessages: CoreMessage[] = [
-    ...historyTurns,
+    ...ctx.historyTurns,
     { role: "user", content: prompt },
   ]
 
@@ -415,7 +316,7 @@ export async function runAgent(
   // Run the generic agent loop with callbacks for temporal logging and events
   const result = await runAgentLoop({
     model,
-    systemPrompt,
+    systemPrompt: ctx.systemPrompt,
     initialMessages,
     tools,
     maxTokens: 8192,

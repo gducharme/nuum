@@ -9,7 +9,7 @@
 
 import { createStorage, initializeDefaultEntries, type Storage } from "../storage"
 import { buildTemporalView, reconstructHistoryAsTurns } from "../temporal"
-import { buildSystemPrompt, buildConversationHistory } from "../agent"
+import { buildAgentContext } from "../context"
 import { Config } from "../config"
 import type { CoreMessage } from "ai"
 
@@ -363,11 +363,11 @@ export async function runDump(dbPath: string): Promise<void> {
   const storage = createStorage(dbPath)
   await initializeDefaultEntries(storage)
 
-  // Build system prompt exactly as the agent sees it
-  const { prompt: systemPrompt, tokens: systemTokens } = await buildSystemPrompt(storage)
-
-  // Build conversation history exactly as the agent sees it
-  const conversationTurns = await buildConversationHistory(storage)
+  // Build agent context exactly as the agent sees it
+  const ctx = await buildAgentContext(storage)
+  const systemPrompt = ctx.systemPrompt
+  const systemTokens = ctx.systemTokens
+  const conversationTurns = ctx.historyTurns
 
   // Calculate conversation tokens (rough estimate)
   const conversationTokens = conversationTurns.reduce((sum, turn) => {
