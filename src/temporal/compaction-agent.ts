@@ -83,22 +83,18 @@ function buildCompactionTaskPrompt(
   currentTokens: number,
   targetTokens: number,
   recencyBuffer: number,
-  force?: boolean,
 ): string {
   const underTarget = currentTokens <= targetTokens;
-  const sizeSection = underTarget && force
-    ? `**Current size:** ~${currentTokens.toLocaleString()} tokens (already under target)
-**Target size:** ~${targetTokens.toLocaleString()} tokens
-**Mode:** Cleanup mode - remove cruft and noise even though under target`
-    : `**Current size:** ~${currentTokens.toLocaleString()} tokens
-**Target size:** ~${targetTokens.toLocaleString()} tokens
-**To distill:** ~${(currentTokens - targetTokens).toLocaleString()} tokens`;
-
+  
   return `## Working Memory Optimization Task
 
 Your working memory (conversation history) needs to be optimized for effective action.
 
-${sizeSection}
+**Current size:** ~${currentTokens.toLocaleString()} tokens
+**Target size:** ~${targetTokens.toLocaleString()} tokens
+${underTarget 
+    ? "**Status:** Already at/under target. You may clean up noise if you see any, or call finish_distillation."
+    : `**To distill:** ~${(currentTokens - targetTokens).toLocaleString()} tokens`}
 **Recency buffer:** ${recencyBuffer} most recent messages are protected
 
 The conversation above contains IDs you can reference:
@@ -185,9 +181,10 @@ interface DistillationToolResult {
 function buildCompactionTools(
   storage: Storage,
   validIds: Set<string>,
+  targetTokens: number,
 ): {
-  tools: Record<string, CoreTool>;
-  getLastResult: (toolCallId: string) => DistillationToolResult | undefined;
+  tools: Record<string, CoreTool>
+  getLastResult: (toolCallId: string) => DistillationToolResult | undefined
 } {
   // Track results by toolCallId for the agent loop to access
   const results = new Map<string, DistillationToolResult>();
@@ -318,12 +315,19 @@ function buildCompactionTools(
           ? ` (adjusted to ${adjustedStartId} → ${adjustedEndId} to preserve tool call pairs)` 
           : "";
 
+        // Get current token count to report progress
+        const currentTokens = await getEffectiveViewTokens(storage.temporal);
+        const atTarget = currentTokens <= targetTokens;
+        const tokenStatus = atTarget
+          ? `\n\n**Status:** ${currentTokens.toLocaleString()} tokens (✓ at/under target of ${targetTokens.toLocaleString()}). You may call finish_distillation or continue cleaning up.`
+          : `\n\n**Status:** ${currentTokens.toLocaleString()} tokens (target: ${targetTokens.toLocaleString()}, need to distill ~${(currentTokens - targetTokens).toLocaleString()} more)`;
+
         activity.distillation.info(
-          `Created order-${newOrder} distillation (${summaryInsert.tokenEstimate} tokens, ${retainedFacts.length} facts)${wasAdjusted ? " [adjusted]" : ""}`,
+          `Created order-${newOrder} distillation (${summaryInsert.tokenEstimate} tokens, ${retainedFacts.length} facts) → ${currentTokens.toLocaleString()} tokens${atTarget ? " ✓" : ""}`,
         );
 
         const result: DistillationToolResult = {
-          output: `Created order-${newOrder} distillation covering ${adjustedStartId} → ${adjustedEndId} (~${summaryInsert.tokenEstimate} tokens, ${retainedFacts.length} facts retained).${adjustmentNote} ${subsumedSummaries.length > 0 ? `Subsumed ${subsumedSummaries.length} existing distillations.` : ""}`,
+          output: `Created order-${newOrder} distillation covering ${adjustedStartId} → ${adjustedEndId} (~${summaryInsert.tokenEstimate} tokens, ${retainedFacts.length} facts retained).${adjustmentNote}${subsumedSummaries.length > 0 ? ` Subsumed ${subsumedSummaries.length} existing distillations.` : ""}${tokenStatus}`,
           done: false,
           distillationCreated: true,
         };
@@ -440,21 +444,13 @@ export async function runCompaction(
   // Get model (use workhorse tier - good balance of capability and cost)
   const model = Provider.getModelForTier("workhorse");
 
-  // Outer loop: keep compacting until under budget or max turns
-  // When forced, let the agent decide when to stop (don't auto-break at target)
+  // Outer loop: agent controls when to stop via finish_distillation
+  // We just enforce max turns as a safety limit
   for (let turn = 0; turn < MAX_COMPACTION_TURNS; turn++) {
     result.turnsUsed++;
 
-    // Check current effective view size
+    // Get current effective view size for the prompt
     const currentTokens = await getEffectiveViewTokens(storage.temporal);
-
-    if (currentTokens <= config.compactionTarget && !config.force) {
-      log.info("compaction target reached", {
-        current: currentTokens,
-        target: config.compactionTarget,
-      });
-      break;
-    }
 
     // Rebuild conversation history (it now includes IDs in messages/summaries)
     // This must be refreshed each turn since summaries may have been created
@@ -481,14 +477,13 @@ export async function runCompaction(
     });
 
     // Build tools with execute callbacks (must rebuild each turn as validIds changes)
-    const { tools, getLastResult } = buildCompactionTools(storage, validIds);
+    const { tools, getLastResult } = buildCompactionTools(storage, validIds, config.compactionTarget);
 
     // Build task prompt (IDs are already visible in the conversation)
     const taskPrompt = buildCompactionTaskPrompt(
       currentTokens,
       config.compactionTarget,
       recencyBuffer,
-      config.force,
     );
 
     // Agent messages: refreshed history + compaction task
