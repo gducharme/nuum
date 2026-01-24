@@ -623,7 +623,7 @@ export async function runAgent(
         const d = curationResult.distillation
         onEvent?.({
           type: "compaction",
-          content: `Distilled ${d.tokensBefore - d.tokensAfter} tokens (${d.summariesCreated} distillations)`,
+          content: `Distilled ${d.tokensBefore - d.tokensAfter} tokens (${d.distillationsCreated} distillations)`,
           compactionResult: d,
         })
       }

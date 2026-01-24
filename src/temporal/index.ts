@@ -12,16 +12,12 @@
 export {
   isCoveredBySummary,
   isSubsumedByHigherOrder,
-  getUncoveredMessages,
-  getEffectiveSummaries,
-  findCoverageGaps,
 } from "./coverage"
 
 // Temporal view construction
 export {
   buildTemporalView,
   reconstructHistoryAsTurns,
-  renderTemporalView,
   type TemporalView,
   type BuildTemporalViewOptions,
 } from "./view"
@@ -40,30 +36,11 @@ export {
   type CompactionState,
 } from "./compaction"
 
-// Summary creation
+// Summary/distillation types
 export {
   estimateSummaryTokens,
-  createSummaryInsert,
-  validateSummaryRange,
-  validateSummaryTokens,
-  findBreakpoints,
-  groupMessagesForSummary,
-  groupSummariesForHigherOrder,
   type SummaryInput,
-  type CreateSummaryParams,
 } from "./summary"
-
-// Recursive summarization
-export {
-  getUnsubsumedSummariesAtOrder,
-  getNextOrderToSummarize,
-  calculateHigherOrderRange,
-  checkCompressionInvariant,
-  getExpectedTokenBudget,
-  estimateRequiredOrders,
-  calculateCompressionRatio,
-  validateRecursiveSummary,
-} from "./recursive"
 
 // Mock LLM for testing
 export { createMockLLM, type MockLLM, type MockLLMConfig, type MockSummaryOutput } from "./mock-llm"

@@ -44,7 +44,7 @@ export namespace Events {
     "temporal.compaction.complete",
     z.object({
       workerId: z.string(),
-      summariesCreated: z.number(),
+      distillationsCreated: z.number(),
       tokensCompressed: z.number(),
     }),
   )

@@ -17,7 +17,7 @@ import type { CompactionConfig, CompactionResult } from "./compaction-agent"
 describe("CompactionResult interface", () => {
   it("has the expected shape", () => {
     const result: CompactionResult = {
-      summariesCreated: 5,
+      distillationsCreated: 5,
       tokensBefore: 10000,
       tokensAfter: 5000,
       turnsUsed: 2,
@@ -27,7 +27,7 @@ describe("CompactionResult interface", () => {
       },
     }
 
-    expect(result.summariesCreated).toBe(5)
+    expect(result.distillationsCreated).toBe(5)
     expect(result.tokensBefore).toBe(10000)
     expect(result.tokensAfter).toBe(5000)
     expect(result.turnsUsed).toBe(2)

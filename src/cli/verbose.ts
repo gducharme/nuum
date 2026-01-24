@@ -211,7 +211,7 @@ export class VerboseOutput {
   compaction(result: CompactionResult): void {
     this.separator("COMPACTION")
 
-    this.log(`Summaries created: ${result.summariesCreated}`)
+    this.log(`Distillations created: ${result.distillationsCreated}`)
     this.log(`Agent turns used: ${result.turnsUsed}`)
 
     const tokensCompressed = result.tokensBefore - result.tokensAfter

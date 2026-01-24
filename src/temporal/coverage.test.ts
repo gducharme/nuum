@@ -4,18 +4,11 @@
  * ULID range semantics (from arch spec):
  * - startId and endId are INCLUSIVE
  * - A message is covered if: message.id >= summary.startId AND message.id <= summary.endId
- * - Adjacent summaries should not overlap
  */
 
 import { describe, it, expect } from "bun:test"
-import {
-  isCoveredBySummary,
-  isSubsumedByHigherOrder,
-  getUncoveredMessages,
-  getEffectiveSummaries,
-  findCoverageGaps,
-} from "./coverage"
-import type { TemporalSummary, TemporalMessage } from "../storage/schema"
+import { isCoveredBySummary, isSubsumedByHigherOrder } from "./coverage"
+import type { TemporalSummary } from "../storage/schema"
 
 // Helper to create minimal summary objects for testing
 function makeSummary(
@@ -25,17 +18,6 @@ function makeSummary(
   endId: string,
 ): Pick<TemporalSummary, "id" | "orderNum" | "startId" | "endId"> {
   return { id, orderNum: order, startId, endId }
-}
-
-// Helper to create minimal message objects for testing
-function makeMessage(id: string): TemporalMessage {
-  return {
-    id,
-    type: "user",
-    content: "test",
-    tokenEstimate: 10,
-    createdAt: new Date().toISOString(),
-  }
 }
 
 describe("isCoveredBySummary", () => {
@@ -154,171 +136,5 @@ describe("isSubsumedByHigherOrder", () => {
     const summaries = [summary]
 
     expect(isSubsumedByHigherOrder(summary, summaries)).toBe(false)
-  })
-})
-
-describe("getUncoveredMessages", () => {
-  it("returns all messages when no summaries exist", () => {
-    const messages = [makeMessage("msg_001"), makeMessage("msg_002")]
-    const result = getUncoveredMessages(messages, [])
-    expect(result).toHaveLength(2)
-  })
-
-  it("returns empty array when all messages are covered", () => {
-    const messages = [makeMessage("msg_001"), makeMessage("msg_005")]
-    const summaries = [makeSummary("sum_001", 1, "msg_001", "msg_010")]
-    const result = getUncoveredMessages(messages, summaries)
-    expect(result).toHaveLength(0)
-  })
-
-  it("returns only messages outside summary ranges", () => {
-    const messages = [
-      makeMessage("msg_001"),
-      makeMessage("msg_015"), // In gap
-      makeMessage("msg_025"),
-    ]
-    const summaries = [
-      makeSummary("sum_001", 1, "msg_001", "msg_010"),
-      makeSummary("sum_002", 1, "msg_020", "msg_030"),
-    ]
-    const result = getUncoveredMessages(messages, summaries)
-    expect(result).toHaveLength(1)
-    expect(result[0].id).toBe("msg_015")
-  })
-
-  it("handles messages at boundaries correctly", () => {
-    const messages = [
-      makeMessage("msg_010"), // End of summary 1 (covered)
-      makeMessage("msg_011"), // After summary 1 (uncovered)
-      makeMessage("msg_020"), // Start of summary 2 (covered)
-    ]
-    const summaries = [
-      makeSummary("sum_001", 1, "msg_001", "msg_010"),
-      makeSummary("sum_002", 1, "msg_020", "msg_030"),
-    ]
-    const result = getUncoveredMessages(messages, summaries)
-    expect(result).toHaveLength(1)
-    expect(result[0].id).toBe("msg_011")
-  })
-})
-
-describe("getEffectiveSummaries", () => {
-  it("returns all summaries when none are subsumed", () => {
-    const summaries = [
-      makeSummary("sum_001", 1, "msg_001", "msg_010"),
-      makeSummary("sum_002", 1, "msg_011", "msg_020"),
-    ]
-    const result = getEffectiveSummaries(summaries)
-    expect(result).toHaveLength(2)
-  })
-
-  it("excludes order-1 summaries subsumed by order-2", () => {
-    const order1a = makeSummary("sum_001", 1, "msg_001", "msg_010")
-    const order1b = makeSummary("sum_002", 1, "msg_011", "msg_020")
-    const order2 = makeSummary("sum_003", 2, "msg_001", "msg_020")
-    const summaries = [order1a, order1b, order2]
-
-    const result = getEffectiveSummaries(summaries)
-    expect(result).toHaveLength(1)
-    expect(result[0].id).toBe("sum_003")
-  })
-
-  it("includes order-2 but excludes its order-1 children", () => {
-    const order1a = makeSummary("sum_001", 1, "msg_001", "msg_010")
-    const order1b = makeSummary("sum_002", 1, "msg_011", "msg_020")
-    const order1c = makeSummary("sum_003", 1, "msg_021", "msg_030") // Not subsumed
-    const order2 = makeSummary("sum_004", 2, "msg_001", "msg_020")
-    const summaries = [order1a, order1b, order1c, order2]
-
-    const result = getEffectiveSummaries(summaries)
-    expect(result).toHaveLength(2)
-    expect(result.map((s) => s.id).sort()).toEqual(["sum_003", "sum_004"])
-  })
-
-  it("handles multiple levels of recursion", () => {
-    const order1a = makeSummary("sum_001", 1, "msg_001", "msg_010")
-    const order1b = makeSummary("sum_002", 1, "msg_011", "msg_020")
-    const order2 = makeSummary("sum_003", 2, "msg_001", "msg_020")
-    const order3 = makeSummary("sum_004", 3, "msg_001", "msg_020")
-    const summaries = [order1a, order1b, order2, order3]
-
-    const result = getEffectiveSummaries(summaries)
-    expect(result).toHaveLength(1)
-    expect(result[0].id).toBe("sum_004")
-  })
-})
-
-describe("findCoverageGaps", () => {
-  it("returns empty array when no summaries and no message range", () => {
-    const result = findCoverageGaps([])
-    expect(result).toHaveLength(0)
-  })
-
-  it("returns single gap spanning everything when no summaries but messages exist", () => {
-    const result = findCoverageGaps([], { firstId: "msg_001", lastId: "msg_100" })
-    expect(result).toHaveLength(1)
-    expect(result[0]).toEqual({ afterId: null, beforeId: null })
-  })
-
-  it("finds gap before first summary", () => {
-    const summaries = [makeSummary("sum_001", 1, "msg_010", "msg_020")]
-    const result = findCoverageGaps(summaries, {
-      firstId: "msg_001",
-      lastId: "msg_020",
-    })
-
-    expect(result.some((g) => g.afterId === null && g.beforeId === "msg_010")).toBe(
-      true,
-    )
-  })
-
-  it("finds gap after last summary", () => {
-    const summaries = [makeSummary("sum_001", 1, "msg_001", "msg_010")]
-    const result = findCoverageGaps(summaries, {
-      firstId: "msg_001",
-      lastId: "msg_020",
-    })
-
-    expect(result.some((g) => g.afterId === "msg_010" && g.beforeId === null)).toBe(
-      true,
-    )
-  })
-
-  it("finds gap between summaries", () => {
-    const summaries = [
-      makeSummary("sum_001", 1, "msg_001", "msg_010"),
-      makeSummary("sum_002", 1, "msg_020", "msg_030"),
-    ]
-    const result = findCoverageGaps(summaries)
-
-    expect(
-      result.some((g) => g.afterId === "msg_010" && g.beforeId === "msg_020"),
-    ).toBe(true)
-  })
-
-  it("does not report gap when summaries are adjacent", () => {
-    // In this case, summaries directly follow each other with no gap
-    const summaries = [
-      makeSummary("sum_001", 1, "msg_001", "msg_010"),
-      makeSummary("sum_002", 1, "msg_010", "msg_020"), // Overlapping at msg_010
-    ]
-    const result = findCoverageGaps(summaries)
-
-    // Should not find a gap between them since they share msg_010
-    expect(result.filter((g) => g.afterId === "msg_010")).toHaveLength(0)
-  })
-
-  it("handles multiple gaps correctly", () => {
-    const summaries = [
-      makeSummary("sum_001", 1, "msg_010", "msg_020"),
-      makeSummary("sum_002", 1, "msg_040", "msg_050"),
-    ]
-    const result = findCoverageGaps(summaries, {
-      firstId: "msg_001",
-      lastId: "msg_060",
-    })
-
-    // Gap before first, between summaries, after last
-    expect(result.length).toBeGreaterThanOrEqual(3)
   })
 })

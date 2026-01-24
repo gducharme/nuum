@@ -447,7 +447,7 @@ export async function runCompact(dbPath: string): Promise<void> {
   if (result.distillation) {
     const d = result.distillation
     console.log(`Distillation:`)
-    console.log(`  Distillations created: ${d.summariesCreated}`)
+    console.log(`  Distillations created: ${d.distillationsCreated}`)
     console.log(`  Tokens: ${fmt(d.tokensBefore)} → ${fmt(d.tokensAfter)}`)
     console.log(`  Turns used: ${d.turnsUsed}`)
     console.log(`  LLM usage: ${fmt(d.usage.inputTokens)} input, ${fmt(d.usage.outputTokens)} output`)

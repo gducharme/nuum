@@ -175,7 +175,7 @@ async function runDistillation(
     activity.distillation.tokens(
       result.tokensBefore,
       result.tokensAfter,
-      `${result.summariesCreated} distillations`
+      `${result.distillationsCreated} distillations`
     )
 
     return result

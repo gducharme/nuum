@@ -46,8 +46,8 @@ const MAX_COMPACTION_TURNS = 10;
  * Result of a compaction run.
  */
 export interface CompactionResult {
-  /** Number of summaries created */
-  summariesCreated: number;
+  /** Number of distillations created */
+  distillationsCreated: number;
   /** Total tokens before compaction */
   tokensBefore: number;
   /** Total tokens after compaction */
@@ -427,7 +427,7 @@ export async function runCompaction(
   config: CompactionConfig,
 ): Promise<CompactionResult> {
   const result: CompactionResult = {
-    summariesCreated: 0,
+    distillationsCreated: 0,
     tokensBefore: 0,
     tokensAfter: 0,
     turnsUsed: 0,
@@ -524,7 +524,7 @@ export async function runCompaction(
         // Track distillations created using our result tracking map
         const toolResult = getLastResult(toolCallId);
         if (toolResult?.distillationCreated) {
-          result.summariesCreated++;
+          result.distillationsCreated++;
         }
       },
     });
@@ -553,7 +553,7 @@ export async function runCompaction(
   result.tokensAfter = await getEffectiveViewTokens(storage.temporal);
 
   log.info("distillation complete", {
-    distillationsCreated: result.summariesCreated,
+    distillationsCreated: result.distillationsCreated,
     tokensBefore: result.tokensBefore,
     tokensAfter: result.tokensAfter,
     turnsUsed: result.turnsUsed,
@@ -589,23 +589,4 @@ export async function runCompactionWorker(
     await storage.workers.fail(workerId, error);
     throw e;
   }
-}
-
-// Legacy exports for backwards compatibility during transition
-// TODO: Remove these after updating callers
-
-/** @deprecated Use runCompaction instead */
-export interface SummarizationLLM {
-  summarizeMessages(messages: TemporalMessage[]): Promise<SummaryInput>;
-  summarizeSummaries(
-    summaries: TemporalSummary[],
-    targetOrder: number,
-  ): Promise<SummaryInput>;
-}
-
-/** @deprecated No longer needed - agent handles summarization */
-export function createSummarizationLLM(): SummarizationLLM {
-  throw new Error(
-    "createSummarizationLLM is deprecated - use runCompaction instead",
-  );
 }

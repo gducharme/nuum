@@ -8,7 +8,7 @@
  */
 
 import { describe, it, expect } from "bun:test"
-import { buildTemporalView, renderTemporalView, type TemporalView } from "./view"
+import { buildTemporalView, type TemporalView } from "./view"
 import type { TemporalMessage, TemporalSummary } from "../storage/schema"
 
 // Helper to create message objects for testing
@@ -375,90 +375,4 @@ describe("buildTemporalView", () => {
   })
 })
 
-describe("renderTemporalView", () => {
-  it("renders empty view with placeholder", () => {
-    const view: TemporalView = {
-      summaries: [],
-      messages: [],
-      totalTokens: 0,
-      breakdown: { summaryTokens: 0, messageTokens: 0 },
-    }
 
-    const result = renderTemporalView(view)
-
-    expect(result).toContain("<conversation_history>")
-    expect(result).toContain("No previous conversation history")
-    expect(result).toContain("</conversation_history>")
-  })
-
-  it("renders summaries with order and range attributes", () => {
-    const view: TemporalView = {
-      summaries: [
-        makeSummary("sum_001", 2, "msg_001", "msg_020", 50, "This is the narrative"),
-      ],
-      messages: [],
-      totalTokens: 50,
-      breakdown: { summaryTokens: 50, messageTokens: 0 },
-    }
-
-    const result = renderTemporalView(view)
-
-    expect(result).toContain('order="2"')
-    expect(result).toContain('from="msg_001"')
-    expect(result).toContain('to="msg_020"')
-    expect(result).toContain("This is the narrative")
-  })
-
-  it("renders key observations as bullet list", () => {
-    const view: TemporalView = {
-      summaries: [
-        makeSummary("sum_001", 1, "msg_001", "msg_010", 50, "Narrative", [
-          "First observation",
-          "Second observation",
-        ]),
-      ],
-      messages: [],
-      totalTokens: 50,
-      breakdown: { summaryTokens: 50, messageTokens: 0 },
-    }
-
-    const result = renderTemporalView(view)
-
-    expect(result).toContain("Key observations:")
-    expect(result).toContain("- First observation")
-    expect(result).toContain("- Second observation")
-  })
-
-  it("renders messages with type prefix", () => {
-    const view: TemporalView = {
-      summaries: [],
-      messages: [
-        makeMessage("msg_001", "Hello", 10, "user"),
-        makeMessage("msg_002", "Hi there", 10, "assistant"),
-      ],
-      totalTokens: 20,
-      breakdown: { summaryTokens: 0, messageTokens: 20 },
-    }
-
-    const result = renderTemporalView(view)
-
-    expect(result).toContain("[User]: Hello")
-    expect(result).toContain("[Assistant]: Hi there")
-  })
-
-  it("renders summaries before messages", () => {
-    const view: TemporalView = {
-      summaries: [makeSummary("sum_001", 1, "msg_001", "msg_010", 50, "Summary text")],
-      messages: [makeMessage("msg_020", "Recent message", 10)],
-      totalTokens: 60,
-      breakdown: { summaryTokens: 50, messageTokens: 10 },
-    }
-
-    const result = renderTemporalView(view)
-
-    // Summary should appear before messages
-    const summaryIndex = result.indexOf("<summary")
-    const messageIndex = result.indexOf("[User]:")
-    expect(summaryIndex).toBeLessThan(messageIndex)
-  })
-})
