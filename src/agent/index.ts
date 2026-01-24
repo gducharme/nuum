@@ -27,6 +27,8 @@ import {
   WriteTool,
   GlobTool,
   GrepTool,
+  WebSearchTool,
+  WebFetchTool,
   LTMGlobTool,
   LTMSearchTool,
   LTMReadTool,
@@ -187,6 +189,25 @@ function buildTools(
     parameters: GrepTool.definition.parameters,
     execute: async (args, { toolCallId }) => {
       const result = await GrepTool.definition.execute(args, factory.createContext(toolCallId))
+      return result.output
+    },
+  })
+
+  // Web tools
+  tools.web_search = tool({
+    description: WebSearchTool.definition.description,
+    parameters: WebSearchTool.definition.parameters,
+    execute: async (args, { toolCallId }) => {
+      const result = await WebSearchTool.definition.execute(args, factory.createContext(toolCallId))
+      return result.output
+    },
+  })
+
+  tools.web_fetch = tool({
+    description: WebFetchTool.definition.description,
+    parameters: WebFetchTool.definition.parameters,
+    execute: async (args, { toolCallId }) => {
+      const result = await WebFetchTool.definition.execute(args, factory.createContext(toolCallId))
       return result.output
     },
   })

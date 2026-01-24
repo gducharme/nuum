@@ -10,6 +10,8 @@ export { EditTool, type EditMetadata } from "./edit"
 export { WriteTool, type WriteMetadata } from "./write"
 export { GlobTool, type GlobMetadata } from "./glob"
 export { GrepTool, type GrepMetadata } from "./grep"
+export { WebSearchTool, type WebSearchMetadata, type SearchResult } from "./web-search"
+export { WebFetchTool, type WebFetchMetadata } from "./web-fetch"
 export {
   LTMGlobTool,
   LTMSearchTool,
