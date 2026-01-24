@@ -44,6 +44,7 @@ import { runConsolidationWorker, type ConsolidationResult } from "../ltm"
 import { runAgentLoop, AgentLoopCancelledError } from "./loop"
 import { buildAgentContext } from "../context"
 import { Log } from "../util/log"
+import { Mcp } from "../mcp"
 
 const log = Log.create({ service: "agent" })
 
@@ -128,6 +129,8 @@ function createToolContextFactory(
 /**
  * Convert our Tool definitions to AI SDK CoreTool format with execute callbacks.
  * This eliminates the need for a separate executeTool() switch statement.
+ *
+ * Also includes any MCP tools that have been connected.
  */
 function buildTools(
   storage: Storage,
@@ -137,6 +140,11 @@ function buildTools(
 ): Record<string, CoreTool> {
   const factory = createToolContextFactory(storage, sessionId, messageId, abortSignal)
   const tools: Record<string, CoreTool> = {}
+
+  // Add MCP tools first (if any servers are connected)
+  // MCP tools are already wrapped as AI SDK CoreTool by Mcp.getTools()
+  const mcpTools = Mcp.getTools()
+  Object.assign(tools, mcpTools)
 
   // File operation tools - wire execute directly
   tools.bash = tool({
@@ -291,9 +299,40 @@ function buildTools(
  */
 export { AgentLoopCancelledError as AgentCancelledError } from "./loop"
 
+/**
+ * Re-export MCP namespace for direct access to config/status.
+ */
+export { Mcp } from "../mcp"
+
 // Re-export context building functions for backward compatibility
 // Prefer importing directly from "../context" for new code
 export { buildSystemPrompt, buildConversationHistory, buildAgentContext } from "../context"
+
+/**
+ * Initialize MCP servers from config.
+ * Call this once at startup before running the agent.
+ */
+export async function initializeMcp(): Promise<void> {
+  try {
+    await Mcp.initialize()
+    const status = Mcp.getStatus()
+    if (status.length > 0) {
+      log.info("MCP servers connected", {
+        servers: status.map((s) => `${s.name} (${s.toolCount} tools)`),
+      })
+    }
+  } catch (error) {
+    log.error("Failed to initialize MCP", { error })
+  }
+}
+
+/**
+ * Disconnect from all MCP servers.
+ * Call this on shutdown.
+ */
+export async function shutdownMcp(): Promise<void> {
+  await Mcp.shutdown()
+}
 
 /**
  * Run the main agent loop.

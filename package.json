@@ -17,6 +17,7 @@
   "dependencies": {
     "@ai-sdk/anthropic": "^1.1.0",
     "@anthropic-ai/sdk": "^0.39.0",
+    "@modelcontextprotocol/sdk": "^1.25.3",
     "@types/diff": "^7.0.2",
     "ai": "^4.1.0",
     "better-sqlite3": "^12.6.2",
