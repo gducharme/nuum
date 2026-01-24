@@ -1,15 +1,20 @@
 /**
- * LTM Consolidation Agent
+ * LTM Knowledge Curator Agent
  *
- * Extracts durable knowledge from raw conversation messages into long-term memory.
+ * Proactively maintains and improves the long-term knowledge base.
  * Runs BEFORE compaction, while full details are still available in temporal memory.
  *
- * This is a mini-agent (the "LTM Manager") with tools for knowledge curation:
+ * Three priorities:
+ * 1. CAPTURE - Extract insights from recent conversation
+ * 2. STRENGTHEN - Proactively research and verify knowledge in current work area
+ * 3. CURATE - Organize, cross-link, prune, and improve the knowledge base
+ *
+ * Tools available:
  *
  * Navigation & Search:
- * - ltm_read: Read a specific entry
  * - ltm_glob: Browse tree structure
  * - ltm_search: Find related entries
+ * - ltm_read: Read a specific entry
  *
  * Creation & Modification:
  * - ltm_create: Create new knowledge entries
@@ -20,6 +25,10 @@
  * - ltm_reparent: Move entry to new parent
  * - ltm_rename: Change entry slug
  * - ltm_archive: Soft-delete outdated entries
+ *
+ * Research:
+ * - web_search: Search the web for information
+ * - web_fetch: Read and extract info from a webpage
  *
  * Workflow:
  * - finish_consolidation: Signal completion
@@ -45,6 +54,8 @@ import {
   LTMReparentTool,
   LTMRenameTool,
   LTMArchiveTool,
+  WebSearchTool,
+  WebFetchTool,
   renderCompactTree,
   type LTMToolContext,
 } from "../tool"
@@ -274,14 +285,47 @@ function buildConsolidationTools(
     },
   })
 
+  // Web tools for research and fact-checking
+  tools.web_search = tool({
+    description: WebSearchTool.definition.description,
+    parameters: WebSearchTool.definition.parameters,
+    execute: async (args, { toolCallId }) => {
+      const ctx = Tool.createContext({
+        sessionID: "consolidation",
+        messageID: "consolidation", 
+        callID: toolCallId,
+      })
+      const toolResult = await WebSearchTool.definition.execute(args, ctx)
+      const result: ConsolidationToolResult = { output: toolResult.output, done: false }
+      results.set(toolCallId, result)
+      return result.output
+    },
+  })
+
+  tools.web_fetch = tool({
+    description: WebFetchTool.definition.description,
+    parameters: WebFetchTool.definition.parameters,
+    execute: async (args, { toolCallId }) => {
+      const ctx = Tool.createContext({
+        sessionID: "consolidation",
+        messageID: "consolidation",
+        callID: toolCallId,
+      })
+      const toolResult = await WebFetchTool.definition.execute(args, ctx)
+      const result: ConsolidationToolResult = { output: toolResult.output, done: false }
+      results.set(toolCallId, result)
+      return result.output
+    },
+  })
+
   // finish_consolidation - Signal completion (consolidation-specific)
   tools.finish_consolidation = tool({
-    description: "Call this when you have finished reviewing the conversation and updating LTM. Always call this to complete consolidation.",
+    description: "Call this when you have finished curating the knowledge base. Always call this to complete the task.",
     parameters: z.object({
-      summary: z.string().describe("Brief summary of what was extracted/updated (or 'No updates needed' if nothing changed)"),
+      summary: z.string().describe("Brief summary of what you did: entries created/updated, research performed, organization changes, etc."),
     }),
     execute: async ({ summary }, { toolCallId }) => {
-      const result: ConsolidationToolResult = { output: "Consolidation complete", done: true, summary }
+      const result: ConsolidationToolResult = { output: "Curation complete", done: true, summary }
       results.set(toolCallId, result)
       return result.output
     },
@@ -294,8 +338,8 @@ function buildConsolidationTools(
 }
 
 /**
- * Build the LTM review turn content.
- * This is added as a system message to continue the main agent's conversation.
+ * Build the LTM curation task content.
+ * This is added as a user message to trigger the knowledge curation workflow.
  */
 async function buildLTMReviewTurn(
   storage: Storage,
@@ -305,62 +349,120 @@ async function buildLTMReviewTurn(
   const allEntries = await storage.ltm.glob("/**")
   const treeView = renderCompactTree(allEntries, 3)
 
-  let content = `## Long-Term Memory Review
+  let content = `## Knowledge Base Curation Task
 
-It's time to review your long-term memory. Take a moment to consider whether there are insights, observations, or facts from the recent conversation that should be captured.
+You are now the **Knowledge Curator**. Your job is to maintain and improve your long-term memory - a knowledge base that makes you more effective over time.
 
-### Current Memory Inventory
+### Three Priorities (in order):
 
-${treeView || "(empty)"}
+**1. CAPTURE** - Extract insights from the recent conversation
+What did you learn? What decisions were made and why? What would help you work better next time?
+
+**2. STRENGTHEN** - Proactively improve knowledge in the current work area
+Look at what we're working on. Is your knowledge in this area solid? Use web search to:
+- Verify facts you've recorded are still current
+- Fill in gaps that would help you work more effectively
+- Research related topics that might come up next
+- Ensure technical details (APIs, libraries, protocols) are accurate
+
+**3. CURATE** - Improve the knowledge base structure
+Is it well-organized? Are entries cross-linked? Is anything stale or redundant?
+
+---
+
+### Current Knowledge Base
+
+${treeView || "(empty - time to start building!)"}
 `
 
   // Add recently updated entries if any
   if (recentlyUpdatedEntries.length > 0) {
     content += `
-### Recently Updated Memories
+### Recently Modified Entries
 
-The following entries were recently modified:
+${recentlyUpdatedEntries.map(e => `- **${e.slug}**: ${e.title}`).join("\n")}
 `
-    for (const entry of recentlyUpdatedEntries) {
-      content += `- **${entry.slug}**: ${entry.title}\n`
-    }
   }
 
   content += `
-### Memory Guidelines
+---
 
-A good memory entry is:
-- **Compact**: Optimized for recall, not explanation. You are the only audience.
-- **Factual**: Captures specific facts, decisions, patterns, or preferences.
-- **Actionable**: Information you need to perform tasks better over time.
+### What Makes a GREAT Entry
 
-Your long-term memory is YOUR resource - a knowledge base you build to learn and improve precision over time.
+**Accumulated wisdom, not documentation:**
+- ✓ "User prefers simplicity over backwards compatibility - don't maintain legacy paths"
+- ✓ "Haiku is unreliable with complex tool schemas - use workhorse tier instead"
+- ✓ "When refactoring, user wants tests run after each phase"
+- ✗ "The config module handles configuration" (too obvious)
+- ✗ "We discussed the protocol today" (too vague)
 
-### What to Capture
-- User preferences and working patterns
-- Project-specific conventions and decisions
-- Technical facts about the codebase
-- Corrections to your existing knowledge
+**Decision rationale:**
+- ✓ "Chose raw NDJSON over JSON-RPC envelope because: simpler, matches Claude Code SDK, no users to migrate"
+- ✗ "Using NDJSON format" (missing the WHY)
 
-### What NOT to Capture
-- Transient task details (these stay in conversation history)
-- Obvious or trivial information
-- Speculative or uncertain information
+**Gotchas and learnings:**
+- ✓ "MCP servers must be initialized before building tools - order matters"
+- ✓ "Token estimates use 4 chars/token approximation - actual varies by model"
+
+**Specific and referenceable:**
+- ✓ "Protocol server: src/jsonrpc/index.ts - handles stdin/stdout, message queuing, mid-turn injection"
+- ✗ "The server handles messages" (too vague to be useful)
+
+---
+
+### Curation Tasks (do these!)
+
+**Organize the tree:**
+- Group related entries under parent paths
+- Use paths like /project/miriad-code/, /patterns/, /user-preferences/
+
+**Cross-link for findability:**
+- Use [[slug]] syntax to connect related entries
+- Ask: "If I search for X, will I find this?"
+
+**Maintain quality:**
+- Combine entries that overlap significantly
+- Split entries that cover too many topics
+- Archive entries that are outdated or wrong
+- Update entries with new information
+
+**Enrich with research:**
+- Use web_search/web_fetch to fact-check or fill gaps
+- Look up documentation for libraries/APIs you reference
+- Verify assumptions about external systems
+
+---
 
 ### Tools Available
-- **ltm_glob(pattern)** - Browse the tree structure
-- **ltm_search(query)** - Find related entries (always search before creating!)
-- **ltm_read(slug)** - Read an entry's full content
-- **ltm_create(...)** - Create a new entry
-- **ltm_update(...)** - Replace an entry's content
-- **ltm_edit(...)** - Surgical find-replace
-- **ltm_reparent(...)** - Move entry to new parent
-- **ltm_rename(...)** - Change entry slug
-- **ltm_archive(...)** - Remove outdated entries
 
-Use [[slug]] syntax in entry bodies to cross-link related knowledge.
+**Navigate & Search:**
+- \`ltm_glob(pattern)\` - Browse tree ("/*" for top level, "/**" for all)
+- \`ltm_search(query)\` - Find entries by keyword (ALWAYS search before creating!)
+- \`ltm_read(slug)\` - Read full entry content
 
-When you're done reviewing (even if no changes needed), call **finish_consolidation** with a brief summary.
+**Create & Modify:**
+- \`ltm_create(slug, title, body, parentPath?)\` - New entry
+- \`ltm_update(slug, body, version)\` - Full rewrite (CAS)
+- \`ltm_edit(slug, old, new, version)\` - Surgical edit (CAS)
+
+**Organize:**
+- \`ltm_reparent(slug, newParentPath, version)\` - Move entry
+- \`ltm_rename(slug, newSlug, version)\` - Change slug
+- \`ltm_archive(slug, version)\` - Remove outdated entry
+
+**Research:**
+- \`web_search(query)\` - Search the web for information
+- \`web_fetch(url, question)\` - Read a webpage and extract info
+
+---
+
+### Your Task
+
+1. **First**: Capture any insights from the recent conversation (this is the priority)
+2. **Then**: Look at your knowledge base - is it serving you well? Improve it.
+3. **Finally**: Call \`finish_consolidation\` with a summary of what you did
+
+Be proactive! This is YOUR knowledge base. Make it useful.
 `
 
   return content
