@@ -34,6 +34,8 @@ export namespace Config {
       compactionThreshold: z.number().default(20_000),
       /** Target size after compaction */
       compactionTarget: z.number().default(15_000),
+      /** Minimum recent messages to preserve (never summarized) */
+      recencyBufferMessages: z.number().default(10),
       /** Temporal search sub-agent budget (Sonnet 1M beta) */
       temporalQueryBudget: z.number().default(512_000),
       /** LTM reflection sub-agent budget (Opus) */

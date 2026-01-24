@@ -22,6 +22,7 @@ import type { TemporalMessage, TemporalSummary, TemporalSummaryInsert } from "..
 import { Provider } from "../provider"
 import { Identifier } from "../id"
 import { Log } from "../util/log"
+import { Config } from "../config"
 import { buildAgentContext, buildConversationHistory } from "../context"
 import { runAgentLoop, stopOnTool } from "../agent/loop"
 import { estimateSummaryTokens, type SummaryInput } from "./summary"
@@ -68,6 +69,7 @@ export interface CompactionConfig {
 function buildCompactionTaskPrompt(
   currentTokens: number,
   targetTokens: number,
+  recencyBuffer: number,
 ): string {
   return `## Compaction Task
 
@@ -76,10 +78,12 @@ The conversation history has grown too large and needs to be compressed.
 **Current size:** ~${currentTokens} tokens
 **Target size:** ~${targetTokens} tokens
 **Tokens to compress:** ~${currentTokens - targetTokens}
+**Recency buffer:** ${recencyBuffer} most recent messages are protected (cannot be summarized)
 
 The conversation above contains IDs you can reference:
 - Messages have \`[id:xxx]\` prefixes
 - Summaries show \`[summary from:xxx to:yyy]\` ranges
+- Note: The most recent ${recencyBuffer} messages are excluded from valid IDs to preserve immediate context
 
 ## Instructions
 
@@ -88,7 +92,7 @@ Create summaries to compress the conversation history. For each summary:
 1. Choose a **startId** and **endId** that defines the range to summarize
    - Use IDs visible in the conversation (message IDs or summary boundary IDs)
    - A summary can subsume other summaries by spanning their ranges
-   - Leave recent messages unsummarized to preserve detail for ongoing work
+   - Recent messages are automatically protected - focus on older content
 
 2. Write a **narrative** that captures what happened in that range
    - Focus on the flow of events, decisions made, and work accomplished
@@ -106,7 +110,6 @@ When you've compressed enough to meet the target (or believe no more compression
 
 Tips:
 - Older content can be more aggressively summarized
-- Recent work should retain more detail
 - Natural breakpoints: task completions, topic changes, user requests
 - Higher-order summaries are created automatically when you subsume existing summaries
 `
@@ -250,27 +253,42 @@ function buildCompactionTools(
 }
 
 /**
- * Collect all valid IDs that the agent can reference from the temporal view.
- * These are the IDs visible in the reconstructed conversation history.
+ * Collect valid IDs that the agent can reference for summarization.
+ * Excludes the most recent N messages (recency buffer) to preserve immediate context.
+ *
+ * @param messages All messages in temporal storage
+ * @param summaries All summaries in temporal storage
+ * @param recencyBuffer Number of recent messages to exclude from summarization
+ * @returns Set of IDs that can be used as summary boundaries, plus the cutoff ID
  */
 function collectValidIds(
   messages: TemporalMessage[],
   summaries: TemporalSummary[],
-): Set<string> {
+  recencyBuffer: number,
+): { validIds: Set<string>; recencyCutoffId: string | null } {
   const ids = new Set<string>()
 
-  // Add summary boundary IDs
+  // Sort messages chronologically
+  const sortedMessages = [...messages].sort((a, b) => a.id.localeCompare(b.id))
+
+  // Determine the cutoff point - messages before this can be summarized
+  const cutoffIndex = Math.max(0, sortedMessages.length - recencyBuffer)
+  const recencyCutoffId = cutoffIndex > 0 ? sortedMessages[cutoffIndex - 1]?.id ?? null : null
+
+  // Add summary boundary IDs (only if they're before the cutoff)
   for (const summary of summaries) {
-    ids.add(summary.startId)
-    ids.add(summary.endId)
+    if (!recencyCutoffId || summary.endId <= recencyCutoffId) {
+      ids.add(summary.startId)
+      ids.add(summary.endId)
+    }
   }
 
-  // Add message IDs
-  for (const message of messages) {
-    ids.add(message.id)
+  // Add message IDs (only those before the cutoff)
+  for (let i = 0; i < cutoffIndex; i++) {
+    ids.add(sortedMessages[i].id)
   }
 
-  return ids
+  return { validIds: ids, recencyCutoffId }
 }
 
 /**
@@ -334,7 +352,18 @@ export async function runCompaction(
     // Get all messages and summaries to know which IDs are valid
     const allMessages = await storage.temporal.getMessages()
     const allSummaries = await storage.temporal.getSummaries()
-    const validIds = collectValidIds(allMessages, allSummaries)
+
+    // Get recency buffer from config - these messages are protected from summarization
+    const appConfig = Config.get()
+    const recencyBuffer = appConfig.tokenBudgets.recencyBufferMessages
+    const { validIds, recencyCutoffId } = collectValidIds(allMessages, allSummaries, recencyBuffer)
+
+    log.debug("compaction valid IDs", {
+      totalMessages: allMessages.length,
+      validIds: validIds.size,
+      recencyBuffer,
+      recencyCutoffId,
+    })
 
     // Build tools with execute callbacks (must rebuild each turn as validIds changes)
     const { tools, getLastResult } = buildCompactionTools(storage, validIds)
@@ -343,6 +372,7 @@ export async function runCompaction(
     const taskPrompt = buildCompactionTaskPrompt(
       currentTokens,
       config.compactionTarget,
+      recencyBuffer,
     )
 
     // Agent messages: refreshed history + compaction task
