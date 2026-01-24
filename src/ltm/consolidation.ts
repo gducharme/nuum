@@ -467,11 +467,22 @@ ${recentlyUpdatedEntries.map(e => `- **${e.slug}**: ${e.title}`).join("\n")}
 
 **Organize the tree:**
 - Group related entries under parent paths
-- Use paths like /project/miriad-code/, /patterns/, /user-preferences/
+- Create small "index" entries that just organize children (this is fine!)
+- A flat list of 20 entries is hard to navigate - a tree is better
+
+Example structure:
+  /miriad-code           <- index entry: "My codebase - architecture and patterns"
+    /protocol            <- NDJSON protocol details
+    /memory-system       <- temporal, LTM, distillation
+  /user                  <- index entry: "Working with Simen"
+    /preferences         <- simplicity over compat, incremental refactoring
+  /integrations          <- index entry: "External systems"
+    /mcp                 <- MCP protocol, config resolution
 
 **Cross-link for findability:**
 - Use [[slug]] syntax to connect related entries
 - Ask: "If I search for X, will I find this?"
+- Index entries can list their children with [[links]]
 
 **Maintain quality:**
 - Combine entries that overlap significantly
