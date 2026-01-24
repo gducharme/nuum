@@ -1,18 +1,39 @@
 {
-  "name": "miriad-code",
+  "name": "@miriad-systems/nuum",
   "version": "0.1.0",
-  "description": "Long-term execution coding agent with active memory management",
+  "description": "AI coding agent with continuous memory - infinite context across sessions",
   "type": "module",
   "bin": {
-    "miriad-code": "./dist/cli/index.js"
+    "nuum": "./dist/cli/index.js"
   },
+  "files": [
+    "dist",
+    "src/storage/migrations"
+  ],
   "scripts": {
-    "build": "bun build ./src/cli/index.ts --outdir ./dist --target bun",
+    "build": "bun build ./src/cli/index.ts --outdir ./dist --target node",
     "dev": "bun run ./src/cli/index.ts",
     "typecheck": "tsc --noEmit",
     "test": "bun test",
-    "db:generate": "drizzle-kit generate",
-    "db:migrate": "drizzle-kit migrate"
+    "prepublishOnly": "bun run build && bun run typecheck"
+  },
+  "keywords": [
+    "ai",
+    "agent",
+    "coding",
+    "memory",
+    "anthropic",
+    "claude",
+    "mcp"
+  ],
+  "author": "Miriad Systems",
+  "license": "MIT",
+  "repository": {
+    "type": "git",
+    "url": "https://github.com/miriad-systems/nuum.git"
+  },
+  "engines": {
+    "node": ">=18.0.0"
   },
   "dependencies": {
     "@ai-sdk/anthropic": "^1.1.0",
