@@ -94,6 +94,11 @@ const INIT_SCHEMA = `
     completed_at TEXT,
     error TEXT
   );
+
+  CREATE TABLE IF NOT EXISTS session_config (
+    key TEXT PRIMARY KEY,
+    value TEXT
+  );
 `
 
 /**

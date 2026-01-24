@@ -90,5 +90,13 @@ You do NOT manage this memory directly. Focus on your work - memory happens auto
 Your /identity and /behavior entries are always visible to guide you.
 `
 
+  // Add CAST-provided system prompt overlay (if any)
+  const systemPromptOverlay = await storage.session.getSystemPromptOverlay()
+  if (systemPromptOverlay) {
+    prompt += `
+${systemPromptOverlay}
+`
+  }
+
   return { prompt, tokens: estimateTokens(prompt) }
 }

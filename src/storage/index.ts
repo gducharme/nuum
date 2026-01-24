@@ -27,6 +27,7 @@ import {
   ConflictError,
 } from "./ltm"
 import { createWorkerStorage, type WorkerStorage, type WorkerType, type WorkerStatus } from "./worker"
+import { createSessionStorage, type SessionStorage } from "./session"
 
 // Re-export types
 export type {
@@ -43,6 +44,7 @@ export type {
   WorkerStorage,
   WorkerType,
   WorkerStatus,
+  SessionStorage,
 }
 
 export { ConflictError }
@@ -67,6 +69,7 @@ export interface Storage {
   present: PresentStorage
   ltm: LTMStorage
   workers: WorkerStorage
+  session: SessionStorage
 }
 
 /**
@@ -110,6 +113,7 @@ function createStorageFromDb(db: DrizzleDB): StorageWithDb {
     present: createPresentStorage(db),
     ltm: createLTMStorage(db),
     workers: createWorkerStorage(db),
+    session: createSessionStorage(db),
     _db: db,
   }
 }

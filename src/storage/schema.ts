@@ -96,6 +96,24 @@ export const ltmEntries = sqliteTable(
 )
 
 // ─────────────────────────────────────────────────────────────────
+// Session - singleton identity and configuration
+// ─────────────────────────────────────────────────────────────────
+
+/**
+ * Session configuration as key-value pairs.
+ * This is a singleton - there's only one session per database.
+ * 
+ * Keys:
+ * - "id": Session ID (generated once, never changes)
+ * - "created_at": When session was first created
+ * - "system_prompt_overlay": CAST-provided addition to base prompt
+ */
+export const sessionConfig = sqliteTable("session_config", {
+  key: text("key").primaryKey(),
+  value: text("value"),
+})
+
+// ─────────────────────────────────────────────────────────────────
 // Background Workers - job tracking
 // ─────────────────────────────────────────────────────────────────
 

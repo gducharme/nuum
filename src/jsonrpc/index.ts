@@ -53,15 +53,17 @@ export class Server {
   private messageQueue: UserMessage[] = []
   private rl: readline.Interface | null = null
   private processing = false
-  private sessionId: string
+  private sessionId: string = "" // Set in start()
 
   constructor(private options: ServerOptions) {
     this.storage = createStorage(options.dbPath)
-    this.sessionId = Identifier.ascending("session")
   }
 
   async start(): Promise<void> {
     await initializeDefaultEntries(this.storage)
+
+    // Get or create session ID (persisted in database)
+    this.sessionId = await this.storage.session.getId()
 
     // Initialize MCP servers
     await Mcp.initialize()
@@ -88,7 +90,7 @@ export class Server {
       this.shutdown("stdin closed")
     })
 
-    log.info("server started", { dbPath: this.options.dbPath })
+    log.info("server started", { dbPath: this.options.dbPath, sessionId: this.sessionId })
 
     // Emit init message (matches Claude SDK format)
     this.send(systemMessage("init", {
@@ -196,9 +198,15 @@ export class Server {
   }
 
   private async processTurn(userMessage: UserMessage): Promise<void> {
-    const sessionId = userMessage.session_id ?? `session_${Date.now()}`
+    // Always use our persistent session ID (ignore client's session_id)
+    const sessionId = this.sessionId
     const prompt = getPromptFromUserMessage(userMessage)
     const abortController = new AbortController()
+
+    // If CAST provided a system_prompt, store it for this session
+    if (userMessage.system_prompt !== undefined) {
+      await this.storage.session.setSystemPromptOverlay(userMessage.system_prompt || null)
+    }
 
     this.currentTurn = {
       sessionId,
@@ -208,7 +216,7 @@ export class Server {
       startTime: Date.now(),
     }
 
-    log.info("starting turn", { sessionId, promptLength: prompt.length })
+    log.debug("starting turn", { sessionId, promptLength: prompt.length })
 
     try {
       const agentOptions: AgentOptions = {

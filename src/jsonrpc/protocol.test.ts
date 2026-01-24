@@ -49,6 +49,15 @@ describe("parseInputMessage", () => {
         expect(Array.isArray(result.message.message.content)).toBe(true)
       }
     })
+
+    test("parses user message with system_prompt", () => {
+      const line = '{"type":"user","message":{"role":"user","content":"Hello"},"system_prompt":"Always respond in French."}'
+      const result = parseInputMessage(line)
+      expect("message" in result).toBe(true)
+      if ("message" in result && isUserMessage(result.message)) {
+        expect(result.message.system_prompt).toBe("Always respond in French.")
+      }
+    })
   })
 
   describe("control requests", () => {

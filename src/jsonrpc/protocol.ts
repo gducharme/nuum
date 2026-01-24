@@ -43,6 +43,8 @@ export const UserMessageSchema = z.object({
     content: z.union([z.string(), z.array(z.unknown())]),
   }),
   session_id: z.string().optional(),
+  /** CAST-provided addition to base system prompt (stored, persists across messages) */
+  system_prompt: z.string().optional(),
 })
 
 export const ControlRequestSchema = z.object({
