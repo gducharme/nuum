@@ -6,6 +6,7 @@
  */
 
 import { createDb, createInMemoryDb, initializeSchema, getRawConnection, type DrizzleDB } from "./db"
+import { runMigrations } from "./migrate"
 import {
   createTemporalStorage,
   type TemporalStorage,
@@ -98,7 +99,8 @@ export function createStorage(
   const db = createDb(dbPath)
 
   if (options?.initialize !== false) {
-    initializeSchema(db)
+    // Run migrations to ensure schema is up to date
+    runMigrations(db._rawDb)
   }
 
   return createStorageFromDb(db)

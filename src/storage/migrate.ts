@@ -1,0 +1,136 @@
+/**
+ * Database migration system for miriad-code.
+ *
+ * Runs SQL migrations on startup to evolve the schema over time.
+ * Migrations are idempotent - safe to run multiple times.
+ *
+ * Migration files are in src/storage/migrations/ with format:
+ *   NNNN_description.sql (e.g., 0001_initial_schema.sql)
+ *
+ * The _migrations table tracks which migrations have been applied.
+ */
+
+import { readdirSync, readFileSync } from "fs"
+import { join, dirname } from "path"
+import type { RawDatabase } from "./db"
+import { Log } from "../util/log"
+
+const log = Log.create({ service: "migrate" })
+
+/**
+ * Get the migrations directory path.
+ * Works both in development (src/) and production (dist/).
+ */
+function getMigrationsDir(): string {
+  const currentDir = dirname(new URL(import.meta.url).pathname)
+  
+  // If we're in dist/, go to src/
+  if (currentDir.includes("/dist/")) {
+    return currentDir.replace("/dist/", "/src/") + "/migrations"
+  }
+  
+  return join(currentDir, "migrations")
+}
+
+/**
+ * Ensure the _migrations table exists.
+ */
+function ensureMigrationsTable(db: RawDatabase): void {
+  db.exec(`
+    CREATE TABLE IF NOT EXISTS _migrations (
+      id TEXT PRIMARY KEY,
+      applied_at TEXT NOT NULL
+    )
+  `)
+}
+
+/**
+ * Get list of applied migrations.
+ */
+function getAppliedMigrations(db: RawDatabase): Set<string> {
+  const stmt = (db as any).prepare?.("SELECT id FROM _migrations") 
+    ?? (db as any).query?.("SELECT id FROM _migrations")
+  
+  const rows = stmt?.all?.() ?? []
+  return new Set(rows.map((r: any) => r.id))
+}
+
+/**
+ * Record a migration as applied.
+ */
+function recordMigration(db: RawDatabase, id: string): void {
+  const now = new Date().toISOString()
+  db.exec(`INSERT INTO _migrations (id, applied_at) VALUES ('${id}', '${now}')`)
+}
+
+/**
+ * Get list of migration files sorted by name.
+ */
+function getMigrationFiles(): string[] {
+  const migrationsDir = getMigrationsDir()
+  
+  try {
+    return readdirSync(migrationsDir)
+      .filter(f => f.endsWith(".sql"))
+      .sort()
+  } catch {
+    log.debug("migrations directory not found", { dir: migrationsDir })
+    return []
+  }
+}
+
+/**
+ * Run a single migration file.
+ */
+function runMigration(db: RawDatabase, filename: string): void {
+  const migrationsDir = getMigrationsDir()
+  const filepath = join(migrationsDir, filename)
+  const sql = readFileSync(filepath, "utf-8")
+  db.exec(sql)
+}
+
+/**
+ * Run all pending migrations.
+ *
+ * Call this on startup to ensure the database schema is up to date.
+ * Safe to call multiple times - already-applied migrations are skipped.
+ */
+export function runMigrations(db: RawDatabase): { applied: string[]; skipped: string[] } {
+  const result = { applied: [] as string[], skipped: [] as string[] }
+  
+  ensureMigrationsTable(db)
+  
+  const migrationFiles = getMigrationFiles()
+  const appliedMigrations = getAppliedMigrations(db)
+  
+  if (migrationFiles.length === 0) {
+    return result
+  }
+  
+  for (const filename of migrationFiles) {
+    if (appliedMigrations.has(filename)) {
+      result.skipped.push(filename)
+      continue
+    }
+    
+    log.info("applying migration", { migration: filename })
+    
+    try {
+      runMigration(db, filename)
+      recordMigration(db, filename)
+      result.applied.push(filename)
+    } catch (error) {
+      log.error("migration failed", {
+        migration: filename,
+        error: error instanceof Error ? error.message : String(error),
+      })
+      throw new Error(`Migration ${filename} failed: ${error}`)
+    }
+  }
+  
+  if (result.applied.length > 0) {
+    log.info("migrations complete", { applied: result.applied.length })
+  }
+  
+  return result
+}
