@@ -189,22 +189,12 @@ export class JsonRpcServer {
         break
       case "tool_call":
         if (event.toolName && event.toolCallId) {
-          // Parse the args from the content (it's in format "name(args...)")
-          let args: unknown = {}
-          try {
-            const argsMatch = event.content.match(/\((.+?)\.\.\.\)$/)
-            if (argsMatch) {
-              args = JSON.parse(argsMatch[1])
-            }
-          } catch {
-            // Keep empty args
-          }
           this.send(
             createResponse(requestId, {
               type: "tool_call",
               callId: event.toolCallId,
               name: event.toolName,
-              args,
+              args: event.toolArgs ?? {},
             }),
           )
         }
@@ -255,7 +245,11 @@ export class JsonRpcServer {
     }
 
     const cancelledId = this.currentRequest.id
-    this.currentRequest.abortController.abort()
+    const abortController = this.currentRequest.abortController
+    
+    // Clear currentRequest before aborting to prevent race with finally block
+    this.currentRequest = null
+    abortController.abort()
 
     log.info("request cancelled", { cancelledRequestId: cancelledId })
 

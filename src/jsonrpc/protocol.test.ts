@@ -151,9 +151,9 @@ describe("createErrorResponse", () => {
     expect(response.error?.data).toEqual({ field: "prompt" })
   })
 
-  test("handles null id", () => {
+  test("handles null id per JSON-RPC 2.0 spec", () => {
     const response = createErrorResponse(null, ErrorCodes.PARSE_ERROR, "Parse error")
-    expect(response.id).toBe(0)
+    expect(response.id).toBeNull()
   })
 })
 

@@ -24,7 +24,7 @@ export type RunParams = z.infer<typeof RunParamsSchema>
 // JSON-RPC response types
 export interface JsonRpcResponse {
   jsonrpc: "2.0"
-  id: string | number
+  id: string | number | null
   result?: JsonRpcResult
   error?: JsonRpcError
 }
@@ -44,6 +44,7 @@ export type JsonRpcResult =
   | CancelledResult
   | StatusResult
   | ErrorResult
+  | ConsolidationResultEvent
 
 export interface TextChunkResult {
   type: "text"
@@ -87,6 +88,14 @@ export interface ErrorResult {
   message: string
 }
 
+export interface ConsolidationResultEvent {
+  type: "consolidation"
+  entriesCreated: number
+  entriesUpdated: number
+  entriesArchived: number
+  summary: string
+}
+
 // Standard JSON-RPC error codes
 export const ErrorCodes = {
   PARSE_ERROR: -32700,
@@ -113,6 +122,7 @@ export function createResponse(id: string | number, result: JsonRpcResult): Json
 
 /**
  * Create a JSON-RPC error response.
+ * Per JSON-RPC 2.0 spec, id is null when the request id cannot be determined.
  */
 export function createErrorResponse(
   id: string | number | null,
@@ -122,7 +132,7 @@ export function createErrorResponse(
 ): JsonRpcResponse {
   return {
     jsonrpc: "2.0",
-    id: id ?? 0,
+    id,
     error: { code, message, data },
   }
 }

@@ -72,6 +72,7 @@ export interface AgentEvent {
   content: string
   toolName?: string
   toolCallId?: string
+  toolArgs?: unknown
   consolidationResult?: ConsolidationResult
   compactionResult?: CompactionResult
 }
@@ -451,6 +452,7 @@ export async function runAgent(
         content: `${toolName}(${JSON.stringify(args).slice(0, 100)}...)`,
         toolName,
         toolCallId,
+        toolArgs: args,
       })
     },
 
