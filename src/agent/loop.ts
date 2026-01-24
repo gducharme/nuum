@@ -81,6 +81,12 @@ export interface AgentLoopOptions {
    * Can be async for logging to storage.
    */
   onToolCall?: (toolCallId: string, toolName: string, args: unknown) => void | Promise<void>
+  /**
+   * Called before each model turn. Can return additional user content to inject.
+   * Use this for mid-turn message delivery - messages received while the agent
+   * is running can be injected here to give the agent a chance to adjust.
+   */
+  onBeforeTurn?: () => string | null | Promise<string | null>
 }
 
 /**
@@ -131,6 +137,7 @@ export async function runAgentLoop(options: AgentLoopOptions): Promise<AgentLoop
     onToolResult,
     onText,
     onToolCall,
+    onBeforeTurn,
   } = options
 
   // Check if already cancelled
@@ -148,6 +155,16 @@ export async function runAgentLoop(options: AgentLoopOptions): Promise<AgentLoop
     // Check for cancellation at start of each turn
     if (abortSignal?.aborted) {
       throw new AgentLoopCancelledError()
+    }
+
+    // Check for mid-turn user messages to inject
+    const injectedContent = await onBeforeTurn?.()
+    if (injectedContent) {
+      messages.push({
+        role: "user",
+        content: injectedContent,
+      })
+      log.info("injected mid-turn user message", { contentLength: injectedContent.length })
     }
 
     turnsUsed++

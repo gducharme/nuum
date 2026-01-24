@@ -168,6 +168,8 @@ export class Server {
         verbose: false,
         abortSignal: abortController.signal,
         onEvent: (event) => this.handleAgentEvent(event),
+        // Drain queued messages and inject them mid-turn
+        onBeforeTurn: () => this.drainQueueForInjection(),
       }
 
       const result = await runAgent(prompt, agentOptions)
@@ -222,6 +224,33 @@ export class Server {
     } finally {
       this.processing = false
     }
+  }
+
+  /**
+   * Drain all queued messages and return them concatenated for mid-turn injection.
+   * Returns null if no messages are queued.
+   */
+  private drainQueueForInjection(): string | null {
+    if (this.messageQueue.length === 0) {
+      return null
+    }
+
+    const messages = this.messageQueue.splice(0, this.messageQueue.length)
+    const contents = messages.map(m => getPromptFromUserMessage(m))
+    const combined = contents.join("\n\n")
+
+    log.info("injecting mid-turn messages", { 
+      messageCount: messages.length,
+      combinedLength: combined.length,
+    })
+
+    // Notify about the injection
+    this.send(systemMessage("injected", { 
+      message_count: messages.length,
+      content_length: combined.length,
+    }))
+
+    return combined
   }
 
   private handleAgentEvent(event: AgentEvent): void {

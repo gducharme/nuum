@@ -41,14 +41,19 @@ Actions:
 
 ## Out-of-Turn Message Delivery
 
-Messages received while a turn is running are **queued** and processed after the current turn completes.
+Messages received while a turn is running are **injected into the current turn** at the next opportunity (before the next model call). This allows users to provide corrections or additional context mid-turn.
 
 When a message is queued, the server responds with:
 ```json
 {"type":"system","subtype":"queued","session_id":"sess_2","position":1}
 ```
 
-After the current turn completes, queued messages are processed in order.
+When queued messages are injected, the server notifies:
+```json
+{"type":"system","subtype":"injected","message_count":2,"content_length":150}
+```
+
+Multiple queued messages are concatenated with double line breaks (`\n\n`) and injected as a single user message. The agent sees this as additional context and can adjust its behavior accordingly.
 
 ## Output Messages (stdout)
 

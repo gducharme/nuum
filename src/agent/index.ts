@@ -65,6 +65,12 @@ export interface AgentOptions {
   onEvent?: (event: AgentEvent) => void
   /** AbortSignal for cancellation support */
   abortSignal?: AbortSignal
+  /**
+   * Called before each model turn. Can return additional user content to inject.
+   * Use this for mid-turn message delivery - messages received while the agent
+   * is running can be injected here to give the agent a chance to adjust.
+   */
+  onBeforeTurn?: () => string | null | Promise<string | null>
 }
 
 export interface AgentEvent {
@@ -342,7 +348,7 @@ export async function runAgent(
   prompt: string,
   options: AgentOptions,
 ): Promise<AgentResult> {
-  const { storage, onEvent, abortSignal } = options
+  const { storage, onEvent, abortSignal, onBeforeTurn } = options
   const sessionId = Identifier.ascending("session")
 
   // Initialize MCP servers (loads config and connects)
@@ -476,6 +482,32 @@ export async function runAgent(
         content: toolResult.slice(0, 200) + (toolResult.length > 200 ? "..." : ""),
         toolCallId,
       })
+    },
+
+    // Check for mid-turn messages to inject
+    onBeforeTurn: async () => {
+      const content = await onBeforeTurn?.()
+      if (content) {
+        // Persist the injected user message to temporal
+        const injectedMsgId = Identifier.ascending("message")
+        try {
+          await storage.temporal.appendMessage({
+            id: injectedMsgId,
+            type: "user",
+            content: content,
+            tokenEstimate: estimateTokens(content),
+            createdAt: new Date().toISOString(),
+          })
+        } catch (error) {
+          log.error("failed to persist injected user message", {
+            messageId: injectedMsgId,
+            error: error instanceof Error ? error.message : String(error),
+          })
+          throw error
+        }
+        onEvent?.({ type: "user", content })
+      }
+      return content
     },
   })
 
