@@ -30,6 +30,7 @@ import type { TemporalMessage, TemporalSummary, TemporalSummaryInsert } from "..
 import { Provider } from "../provider"
 import { Identifier } from "../id"
 import { Log } from "../util/log"
+import { activity } from "../util/activity-log"
 import { Config } from "../config"
 import { buildAgentContext, buildConversationHistory } from "../context"
 import { runAgentLoop, stopOnTool } from "../agent/loop"
@@ -235,15 +236,9 @@ function buildCompactionTools(
 
         await storage.temporal.createSummary(summaryInsert)
 
-        log.info("created distillation", {
-          id: summaryInsert.id,
-          order: newOrder,
-          startId,
-          endId,
-          tokens: summaryInsert.tokenEstimate,
-          factsRetained: retainedFacts.length,
-          subsumed: subsumedSummaries.length,
-        })
+        activity.distillation.info(
+          `Created order-${newOrder} distillation (${summaryInsert.tokenEstimate} tokens, ${retainedFacts.length} facts)`
+        )
 
         const result: DistillationToolResult = {
           output: `Created order-${newOrder} distillation covering ${startId} → ${endId} (~${summaryInsert.tokenEstimate} tokens, ${retainedFacts.length} facts retained). ${subsumedSummaries.length > 0 ? `Subsumed ${subsumedSummaries.length} existing distillations.` : ""}`,

@@ -44,11 +44,70 @@ import { runConsolidationWorker, type ConsolidationResult } from "../ltm"
 import { runAgentLoop, AgentLoopCancelledError } from "./loop"
 import { buildAgentContext } from "../context"
 import { Log } from "../util/log"
+import { activity } from "../util/activity-log"
 import { Mcp } from "../mcp"
 
 const log = Log.create({ service: "agent" })
 
 const MAX_TURNS = 50
+
+/**
+ * Summarize a tool result for activity logging.
+ * Provides a human-readable summary without overwhelming detail.
+ */
+function summarizeToolResult(toolName: string, result: string): string {
+  const lines = result.split("\n").length
+  const bytes = result.length
+  
+  // Format size info
+  const sizeInfo = bytes < 1024 
+    ? `${bytes}b` 
+    : `${(bytes / 1024).toFixed(1)}kb`
+  
+  switch (toolName) {
+    case "read":
+      return `${lines} lines, ${sizeInfo}`
+    case "glob":
+    case "grep": {
+      // Count matches
+      const matchCount = result.split("\n").filter(l => l.trim()).length
+      return `${matchCount} matches`
+    }
+    case "bash": {
+      // Show exit status if present, otherwise line count
+      if (result.includes("exit code")) {
+        return result.slice(0, 80)
+      }
+      return `${lines} lines output`
+    }
+    case "write":
+    case "edit":
+      return result.slice(0, 60)
+    case "web_search": {
+      const resultCount = (result.match(/^\d+\./gm) || []).length
+      return `${resultCount} results`
+    }
+    case "web_fetch":
+      return `${sizeInfo} extracted`
+    case "ltm_search": {
+      const entryCount = (result.match(/^- \*\*/gm) || []).length
+      return `${entryCount} entries found`
+    }
+    case "ltm_glob":
+      return `${lines} entries`
+    case "ltm_read":
+    case "ltm_create":
+    case "ltm_update":
+    case "ltm_edit":
+    case "ltm_archive":
+    case "ltm_reparent":
+    case "ltm_rename":
+      return result.slice(0, 60)
+    default:
+      // Generic: show truncated result
+      return result.length > 60 ? result.slice(0, 57) + "..." : result
+  }
+}
 
 /**
  * Flag to prevent concurrent compaction runs.
@@ -444,6 +503,9 @@ export async function runAgent(
 
     // Log tool calls to temporal and emit event
     onToolCall: async (toolCallId, toolName, args) => {
+      // Activity log for human-readable output
+      activity.mainAgent.toolCall(toolName, args as Record<string, unknown>)
+      
       const toolCallMsgId = Identifier.ascending("message")
       try {
         await storage.temporal.appendMessage({
@@ -473,6 +535,10 @@ export async function runAgent(
 
     // Log tool results to temporal and emit event
     onToolResult: async (toolCallId, toolName, toolResult) => {
+      // Activity log with smart summary based on tool type
+      const resultSummary = summarizeToolResult(toolName, toolResult)
+      activity.mainAgent.toolResult(toolName, resultSummary)
+      
       const toolResultMsgId = Identifier.ascending("message")
       try {
         await storage.temporal.appendMessage({
@@ -556,7 +622,6 @@ async function maybeRunCompaction(
 ): Promise<CompactionResult | null> {
   // Skip if compaction is already running
   if (compactionInProgress) {
-    log.info("skipping compaction check - already in progress")
     return null
   }
 
@@ -577,26 +642,25 @@ async function maybeRunCompaction(
 
   // Set flag before starting compaction
   compactionInProgress = true
-  log.info("compaction triggered (running in background)", {
-    threshold: config.tokenBudgets.compactionThreshold,
-    target: config.tokenBudgets.compactionTarget,
-  })
 
   // Phase 1: Run LTM consolidation BEFORE compaction
   // Extract durable knowledge from raw messages while they're still available
   try {
     const { messages } = await getMessagesToCompact(storage.temporal)
     if (messages.length > 0) {
-      log.info("running LTM consolidation before compaction", { messageCount: messages.length })
+      activity.ltmCurator.start("Knowledge curation", { messages: messages.length })
 
       const consolidationResult = await runConsolidationWorker(storage, messages)
 
       if (consolidationResult.ran) {
-        log.info("consolidation complete", {
-          entriesCreated: consolidationResult.entriesCreated,
-          entriesUpdated: consolidationResult.entriesUpdated,
-          entriesArchived: consolidationResult.entriesArchived,
-        })
+        const changes = consolidationResult.entriesCreated + consolidationResult.entriesUpdated + consolidationResult.entriesArchived
+        if (changes > 0) {
+          activity.ltmCurator.complete(
+            `${consolidationResult.entriesCreated} created, ${consolidationResult.entriesUpdated} updated, ${consolidationResult.entriesArchived} archived`
+          )
+        } else {
+          activity.ltmCurator.complete("No changes needed")
+        }
 
         onEvent?.({
           type: "consolidation",
@@ -604,20 +668,26 @@ async function maybeRunCompaction(
           consolidationResult,
         })
       } else {
-        log.info("consolidation skipped", { reason: consolidationResult.summary })
+        activity.ltmCurator.skip(consolidationResult.summary)
       }
     }
   } catch (error) {
     // Consolidation failure is non-fatal - continue with compaction
-    log.error("consolidation failed, continuing with compaction", { error })
+    activity.ltmCurator.error(error instanceof Error ? error.message : String(error))
     onEvent?.({
       type: "error",
       content: `Consolidation failed: ${error instanceof Error ? error.message : String(error)}`,
     })
   }
 
-  // Phase 2: Run compaction (agentic summarization)
+  // Phase 2: Run compaction (working memory distillation)
   try {
+    const tokensBefore = await storage.temporal.estimateUncompactedTokens()
+    activity.distillation.start("Working memory optimization", { 
+      tokens: tokensBefore,
+      target: config.tokenBudgets.compactionTarget 
+    })
+
     const result = await runCompactionWorker(
       storage,
       {
@@ -626,25 +696,20 @@ async function maybeRunCompaction(
       },
     )
 
-    const tokensCompressed = result.tokensBefore - result.tokensAfter
-    log.info("compaction complete", {
-      summariesCreated: result.summariesCreated,
-      tokensCompressed,
-      turnsUsed: result.turnsUsed,
-    })
+    activity.distillation.tokens(result.tokensBefore, result.tokensAfter, `${result.summariesCreated} distillations`)
 
     onEvent?.({
       type: "compaction",
-      content: `Compacted ${tokensCompressed} tokens (${result.summariesCreated} summaries created in ${result.turnsUsed} turns)`,
+      content: `Distilled ${result.tokensBefore - result.tokensAfter} tokens (${result.summariesCreated} distillations in ${result.turnsUsed} turns)`,
       compactionResult: result,
     })
 
     return result
   } catch (error) {
-    log.error("compaction failed", { error })
+    activity.distillation.error(error instanceof Error ? error.message : String(error))
     onEvent?.({
       type: "error",
-      content: `Compaction failed: ${error instanceof Error ? error.message : String(error)}`,
+      content: `Distillation failed: ${error instanceof Error ? error.message : String(error)}`,
     })
     return null
   } finally {

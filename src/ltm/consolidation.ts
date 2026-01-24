@@ -38,6 +38,7 @@ import type { AgentType } from "../storage/ltm"
 import { Provider } from "../provider"
 import { Identifier } from "../id"
 import { Log } from "../util/log"
+import { activity } from "../util/activity-log"
 import {
   Tool,
   LTMGlobTool,
@@ -186,6 +187,8 @@ function buildConsolidationTools(
     parameters: LTMSearchTool.definition.parameters,
     execute: async (args, { toolCallId }) => {
       const toolResult = await LTMSearchTool.definition.execute(args, createLTMContext(toolCallId))
+      const matchCount = (toolResult.output.match(/^- \*\*/gm) || []).length
+      activity.ltmCurator.searchResult("ltm_search", matchCount, args.query)
       const result: ConsolidationToolResult = { output: toolResult.output, done: false }
       results.set(toolCallId, result)
       return result.output
@@ -200,7 +203,7 @@ function buildConsolidationTools(
       const toolResult = await LTMCreateTool.definition.execute(args, createLTMContext(toolCallId))
       const entryCreated = toolResult.output.startsWith("Created entry:")
       if (entryCreated) {
-        log.info("created LTM entry", { slug: args.slug })
+        activity.ltmCurator.ltmOperation("create", args.slug, args.title)
       }
       const result: ConsolidationToolResult = { output: toolResult.output, done: false, entryCreated }
       results.set(toolCallId, result)
@@ -215,7 +218,7 @@ function buildConsolidationTools(
       const toolResult = await LTMUpdateTool.definition.execute(args, createLTMContext(toolCallId))
       const entryUpdated = toolResult.output.startsWith("Updated entry:")
       if (entryUpdated) {
-        log.info("updated LTM entry", { slug: args.slug })
+        activity.ltmCurator.ltmOperation("update", args.slug)
       }
       const result: ConsolidationToolResult = { output: toolResult.output, done: false, entryUpdated }
       results.set(toolCallId, result)
@@ -230,7 +233,7 @@ function buildConsolidationTools(
       const toolResult = await LTMEditTool.definition.execute(args, createLTMContext(toolCallId))
       const entryUpdated = toolResult.output.startsWith("Edited entry:")
       if (entryUpdated) {
-        log.info("edited LTM entry", { slug: args.slug })
+        activity.ltmCurator.ltmOperation("update", args.slug, "surgical edit")
       }
       const result: ConsolidationToolResult = { output: toolResult.output, done: false, entryUpdated }
       results.set(toolCallId, result)
@@ -245,7 +248,7 @@ function buildConsolidationTools(
       const toolResult = await LTMReparentTool.definition.execute(args, createLTMContext(toolCallId))
       const entryUpdated = toolResult.output.startsWith("Moved entry:")
       if (entryUpdated) {
-        log.info("reparented LTM entry", { slug: args.slug })
+        activity.ltmCurator.ltmOperation("reparent", args.slug, `→ ${args.newParentPath}`)
       }
       const result: ConsolidationToolResult = { output: toolResult.output, done: false, entryUpdated }
       results.set(toolCallId, result)
@@ -260,7 +263,7 @@ function buildConsolidationTools(
       const toolResult = await LTMRenameTool.definition.execute(args, createLTMContext(toolCallId))
       const entryUpdated = toolResult.output.startsWith("Renamed entry:")
       if (entryUpdated) {
-        log.info("renamed LTM entry", { slug: args.slug })
+        activity.ltmCurator.ltmOperation("rename", args.slug, `→ ${args.newSlug}`)
       }
       const result: ConsolidationToolResult = { output: toolResult.output, done: false, entryUpdated }
       results.set(toolCallId, result)
@@ -275,7 +278,7 @@ function buildConsolidationTools(
       const toolResult = await LTMArchiveTool.definition.execute(args, createLTMContext(toolCallId))
       const entryArchived = toolResult.output.startsWith("Archived entry:")
       if (entryArchived) {
-        log.info("archived LTM entry", { slug: args.slug })
+        activity.ltmCurator.ltmOperation("archive", args.slug)
       }
       const result: ConsolidationToolResult = { output: toolResult.output, done: false, entryArchived }
       results.set(toolCallId, result)
