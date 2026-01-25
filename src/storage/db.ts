@@ -1,12 +1,10 @@
 /**
- * Database connection for miriad-code storage
+ * Database connection for Nuum storage
  *
  * SQLite with WAL mode for concurrent read/write access.
  * Background workers can run while the main agent operates.
  *
- * Auto-detects runtime and uses appropriate driver:
- * - Bun: bun:sqlite (native)
- * - Node.js: better-sqlite3
+ * Uses Bun's native bun:sqlite driver. Nuum requires Bun runtime.
  */
 
 import * as schema from "./schema"
@@ -24,8 +22,11 @@ export interface DrizzleDB {
   [key: string]: unknown
 }
 
-// Detect runtime
+// Verify Bun runtime
 const isBun = typeof globalThis.Bun !== "undefined"
+if (!isBun) {
+  throw new Error("Nuum requires Bun runtime. Install Bun: https://bun.sh")
+}
 
 // Schema initialization SQL
 const INIT_SCHEMA = `
@@ -150,23 +151,16 @@ const INIT_SCHEMA = `
 
 /**
  * Create a SQLite database connection with WAL mode enabled.
- * Auto-detects Bun vs Node.js runtime.
  */
 export function createDb(dbPath: string): DrizzleDB {
-  if (isBun) {
-    return createBunDb(dbPath)
-  }
-  return createNodeDb(dbPath)
+  return createBunDb(dbPath)
 }
 
 /**
  * Create an in-memory database for testing.
  */
 export function createInMemoryDb(): DrizzleDB {
-  if (isBun) {
-    return createBunDb(":memory:")
-  }
-  return createNodeDb(":memory:")
+  return createBunDb(":memory:")
 }
 
 /**
@@ -180,32 +174,6 @@ function createBunDb(dbPath: string): DrizzleDB {
   const { drizzle } = require("drizzle-orm/bun-sqlite")
 
   const sqlite = new BunDatabase(dbPath)
-
-  if (dbPath !== ":memory:") {
-    // Enable WAL mode for concurrent access
-    sqlite.exec("PRAGMA journal_mode=WAL")
-    // Wait up to 5s for locks
-    sqlite.exec("PRAGMA busy_timeout=5000")
-  }
-  // Enable foreign key enforcement
-  sqlite.exec("PRAGMA foreign_keys=ON")
-
-  const db = drizzle(sqlite, { schema })
-  db._rawDb = sqlite
-  return db as DrizzleDB
-}
-
-/**
- * Create database using better-sqlite3 (Node.js)
- */
-function createNodeDb(dbPath: string): DrizzleDB {
-  // Dynamic import for better-sqlite3
-  // eslint-disable-next-line @typescript-eslint/no-require-imports
-  const Database = require("better-sqlite3")
-  // eslint-disable-next-line @typescript-eslint/no-require-imports
-  const { drizzle } = require("drizzle-orm/better-sqlite3")
-
-  const sqlite = new Database(dbPath)
 
   if (dbPath !== ":memory:") {
     // Enable WAL mode for concurrent access

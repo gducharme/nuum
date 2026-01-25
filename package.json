@@ -11,7 +11,7 @@
     "src/storage/migrations"
   ],
   "scripts": {
-    "build": "bun build ./src/cli/index.ts --outdir ./dist --target node",
+    "build": "bun build ./src/cli/index.ts --outdir ./dist --target bun",
     "dev": "bun run ./src/cli/index.ts",
     "typecheck": "tsc --noEmit",
     "test": "bun test",
@@ -42,14 +42,12 @@
     "@modelcontextprotocol/sdk": "^1.25.3",
     "@types/diff": "^7.0.2",
     "ai": "^4.1.0",
-    "better-sqlite3": "^12.6.2",
     "diff": "^8.0.3",
     "drizzle-orm": "^0.38.0",
     "ulid": "^2.3.0",
     "zod": "^3.24.0"
   },
   "devDependencies": {
-    "@types/better-sqlite3": "^7.6.13",
     "@types/bun": "^1.1.0",
     "drizzle-kit": "^0.30.0",
     "tsx": "^4.21.0",
