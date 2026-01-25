@@ -30,6 +30,41 @@ import { Log } from "../util/log"
 const log = Log.create({ service: "agent-loop" })
 
 /**
+ * Add Anthropic cache control markers to messages.
+ * 
+ * Follows OpenCode's caching strategy:
+ * - Mark the last 3 messages with cache control
+ * - Combined with system prompt caching in the provider layer
+ * 
+ * Anthropic allows up to 4 cache breakpoints. We use:
+ * 1. System prompt (in provider layer)
+ * 2-4. Last 3 messages (here)
+ * 
+ * The cache is prefix-based, so each breakpoint caches everything
+ * up to and including that message.
+ */
+function addCacheMarkers(messages: CoreMessage[]): CoreMessage[] {
+  if (messages.length === 0) return messages
+  
+  // Create a copy to avoid mutating the original
+  const result = [...messages]
+  
+  // Mark the last 3 messages (or fewer if not enough messages)
+  // This matches OpenCode's approach: i > len(messages)-3
+  const startIdx = Math.max(0, messages.length - 3)
+  for (let i = startIdx; i < messages.length; i++) {
+    result[i] = {
+      ...result[i],
+      providerOptions: {
+        anthropic: { cacheControl: { type: "ephemeral" } }
+      }
+    } as CoreMessage
+  }
+  
+  return result
+}
+
+/**
  * Error thrown when the agent loop is cancelled via AbortSignal.
  */
 export class AgentLoopCancelledError extends Error {
@@ -173,13 +208,19 @@ export async function runAgentLoop(options: AgentLoopOptions): Promise<AgentLoop
 
     turnsUsed++
 
+    // Add cache markers for Anthropic prompt caching
+    // Mark the second-to-last message as a cache breakpoint
+    // Combined with system prompt caching, this caches the stable context
+    const messagesWithCache = addCacheMarkers(messages)
+
     const response = await Provider.generate({
       model,
       system: systemPrompt,
-      messages,
+      messages: messagesWithCache,
       tools,
       maxTokens,
       temperature,
+      cacheSystemPrompt: true,
     })
 
     totalInputTokens += response.usage.promptTokens

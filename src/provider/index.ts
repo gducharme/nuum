@@ -85,6 +85,8 @@ export namespace Provider {
     temperature?: number
     abortSignal?: AbortSignal
     system?: string
+    /** Enable Anthropic prompt caching for the system prompt */
+    cacheSystemPrompt?: boolean
   }
 
   /**
@@ -157,6 +159,45 @@ Please check the tool's parameter schema and try again with correct arguments.`
   }
 
   /**
+   * Prepare messages with optional system prompt caching.
+   * 
+   * When cacheSystemPrompt is true, converts the system string to a system message
+   * with Anthropic cache control. This enables prompt caching for the (typically large
+   * and stable) system prompt.
+   */
+  function prepareMessages(
+    messages: CoreMessage[],
+    system: string | undefined,
+    cacheSystemPrompt: boolean
+  ): { messages: CoreMessage[]; system: string | undefined } {
+    if (!system) {
+      return { messages, system: undefined }
+    }
+
+    if (!cacheSystemPrompt) {
+      // No caching - use the standard system parameter
+      return { messages, system }
+    }
+
+    // With caching - convert system to a message with cache control
+    // The AI SDK requires system prompts to be in the messages array to add providerOptions
+    const systemMessage: CoreMessage = {
+      role: "system",
+      content: system,
+      providerOptions: {
+        anthropic: {
+          cacheControl: { type: "ephemeral" }
+        }
+      }
+    } as CoreMessage // Type assertion needed for providerOptions
+
+    return {
+      messages: [systemMessage, ...messages],
+      system: undefined // Don't pass system separately when it's in messages
+    }
+  }
+
+  /**
    * Add the invalid tool call handler and wrap tools for runtime error resilience.
    * 
    * This does two things:
@@ -210,20 +251,27 @@ Please check the tool's parameter schema and try again with correct arguments.`
    * Generate text without streaming.
    */
   export async function generate(options: GenerateOptions): Promise<GenerateTextResult<Record<string, CoreTool>, never>> {
+    const { messages, system } = prepareMessages(
+      options.messages,
+      options.system,
+      options.cacheSystemPrompt ?? false
+    )
+
     log.debug("generate", {
       model: options.model.modelId,
-      messageCount: options.messages.length,
+      messageCount: messages.length,
       hasTools: !!options.tools,
+      cacheSystemPrompt: options.cacheSystemPrompt ?? false,
     })
 
     return generateText({
       model: options.model,
-      messages: options.messages,
+      messages,
       tools: prepareTools(options.tools),
       maxTokens: options.maxTokens,
       temperature: options.temperature,
       abortSignal: options.abortSignal,
-      system: options.system,
+      system,
       experimental_repairToolCall: createToolCallRepairFunction(),
     })
   }
@@ -234,20 +282,27 @@ Please check the tool's parameter schema and try again with correct arguments.`
   export async function stream(
     options: GenerateOptions,
   ): Promise<StreamTextResult<Record<string, CoreTool>, never>> {
+    const { messages, system } = prepareMessages(
+      options.messages,
+      options.system,
+      options.cacheSystemPrompt ?? false
+    )
+
     log.debug("stream", {
       model: options.model.modelId,
-      messageCount: options.messages.length,
+      messageCount: messages.length,
       hasTools: !!options.tools,
+      cacheSystemPrompt: options.cacheSystemPrompt ?? false,
     })
 
     return streamText({
       model: options.model,
-      messages: options.messages,
+      messages,
       tools: prepareTools(options.tools),
       maxTokens: options.maxTokens,
       temperature: options.temperature,
       abortSignal: options.abortSignal,
-      system: options.system,
+      system,
       experimental_repairToolCall: createToolCallRepairFunction(),
     })
   }
