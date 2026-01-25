@@ -226,6 +226,29 @@ export async function runAgentLoop(options: AgentLoopOptions): Promise<AgentLoop
     totalInputTokens += response.usage.promptTokens
     totalOutputTokens += response.usage.completionTokens
 
+    // Log cache metrics for observability
+    const anthropicMeta = response.providerMetadata?.anthropic as {
+      cacheCreationInputTokens?: number
+      cacheReadInputTokens?: number
+    } | undefined
+    
+    if (anthropicMeta) {
+      const cacheCreation = anthropicMeta.cacheCreationInputTokens ?? 0
+      const cacheRead = anthropicMeta.cacheReadInputTokens ?? 0
+      const uncached = response.usage.promptTokens - cacheCreation - cacheRead
+      
+      log.info("token usage", {
+        input: response.usage.promptTokens,
+        output: response.usage.completionTokens,
+        cacheWrite: cacheCreation,
+        cacheRead: cacheRead,
+        uncached: uncached,
+        cacheHitRate: response.usage.promptTokens > 0 
+          ? `${Math.round((cacheRead / response.usage.promptTokens) * 100)}%`
+          : "0%",
+      })
+    }
+
     // Handle text response
     if (response.text) {
       finalText = response.text
