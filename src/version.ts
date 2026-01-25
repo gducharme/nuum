@@ -23,7 +23,10 @@ function getPackageVersion(): string {
 // Get git commit hash
 function getGitHash(): string {
   try {
-    return execSync("git rev-parse --short HEAD", { encoding: "utf-8" }).trim()
+    return execSync("git rev-parse --short HEAD", { 
+      encoding: "utf-8",
+      stdio: ["pipe", "pipe", "pipe"], // Suppress stderr
+    }).trim()
   } catch {
     return "unknown"
   }
