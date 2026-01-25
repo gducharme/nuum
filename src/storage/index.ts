@@ -96,6 +96,11 @@ export function createStorage(
   dbPath: string,
   options?: { initialize?: boolean },
 ): StorageWithDb {
+  // Ensure parent directory exists
+  const { mkdirSync } = require("fs")
+  const { dirname } = require("path")
+  mkdirSync(dirname(dbPath), { recursive: true })
+  
   const db = createDb(dbPath)
 
   if (options?.initialize !== false) {
