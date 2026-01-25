@@ -11,7 +11,7 @@
     "src/storage/migrations"
   ],
   "scripts": {
-    "build": "bun build ./src/cli/index.ts --outdir ./dist --target bun && sed -i '' '1s|#!/usr/bin/env node|#!/usr/bin/env bun|' ./dist/index.js",
+    "build": "bun build ./src/cli/index.ts --outdir ./dist --target bun && node -e \"const fs=require('fs');const f='./dist/index.js';fs.writeFileSync(f,fs.readFileSync(f,'utf8').replace('#!/usr/bin/env node','#!/usr/bin/env bun'))\"",
     "dev": "bun run ./src/cli/index.ts",
     "typecheck": "tsc --noEmit",
     "test": "bun test",
