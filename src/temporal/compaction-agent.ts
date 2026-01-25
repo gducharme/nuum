@@ -19,7 +19,7 @@
  * 4. Loops until the token budget target is met
  */
 
-import type { CoreMessage } from "ai"
+import type { CoreMessage, LanguageModel } from "ai"
 import type { Storage } from "../storage"
 import type { TemporalMessage, TemporalSummary } from "../storage/schema"
 import { Provider } from "../provider"
@@ -33,6 +33,7 @@ import {
   buildDistillationTools,
   type DistillationToolResult,
 } from "../tool/distillation"
+import { activity } from "../util/activity-log"
 
 const log = Log.create({ service: "compaction-agent" })
 
@@ -233,8 +234,10 @@ export async function runCompaction(
   // Note: we only use systemPrompt here; history is rebuilt each turn
   const ctx = await buildAgentContext(storage)
 
-  // Get model (use reasoning tier for better distillation decisions)
-  const model = Provider.getModelForTier("reasoning")
+  // Get models - prefer reasoning tier (Opus) but fall back to workhorse (Sonnet)
+  // if the prompt is too long for Opus's 200K context limit
+  let model: LanguageModel = Provider.getModelForTier("reasoning")
+  let usingFallbackModel = false
 
   // Outer loop: agent controls when to stop via finish_distillation
   // We just enforce max turns as a safety limit
@@ -289,23 +292,46 @@ export async function runCompaction(
     ]
 
     // Run the inner agent loop using the generic loop abstraction
-    const loopResult = await runAgentLoop({
-      model,
-      systemPrompt: ctx.systemPrompt,
-      initialMessages,
-      tools,
-      maxTokens: 4096,
-      temperature: 0,
-      maxTurns: 5,
-      isDone: stopOnTool("finish_distillation"),
-      onToolResult: (toolCallId, toolName) => {
-        // Track distillations created using our result tracking map
-        const toolResult = getLastResult(toolCallId)
-        if (toolResult?.distillationCreated) {
-          result.distillationsCreated++
-        }
-      },
-    })
+    // If the prompt is too long for Opus, fall back to Sonnet (which has 1M context)
+    let loopResult
+    try {
+      loopResult = await runAgentLoop({
+        model,
+        systemPrompt: ctx.systemPrompt,
+        initialMessages,
+        tools,
+        maxTokens: 4096,
+        temperature: 0,
+        maxTurns: 5,
+        isDone: stopOnTool("finish_distillation"),
+        onToolResult: (toolCallId, toolName) => {
+          // Track distillations created using our result tracking map
+          const toolResult = getLastResult(toolCallId)
+          if (toolResult?.distillationCreated) {
+            result.distillationsCreated++
+          }
+        },
+      })
+    } catch (error) {
+      // Check if this is a "prompt is too long" error and we haven't already fallen back
+      const errorMessage = error instanceof Error ? error.message : String(error)
+      if (errorMessage.includes("prompt is too long") && !usingFallbackModel) {
+        activity.distillation.warn(
+          "Prompt too long for Opus, falling back to Sonnet (1M context)",
+        )
+        log.info("falling back to workhorse model due to prompt size", {
+          error: errorMessage,
+        })
+        model = Provider.getModelForTier("workhorse")
+        usingFallbackModel = true
+        // Retry this turn with the new model
+        turn--
+        result.turnsUsed-- // Don't count this failed attempt
+        continue
+      }
+      // Re-throw other errors
+      throw error
+    }
 
     result.usage.inputTokens += loopResult.usage.inputTokens
     result.usage.outputTokens += loopResult.usage.outputTokens
