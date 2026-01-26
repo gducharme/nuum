@@ -63,7 +63,7 @@ import { runAgentLoop, stopOnTool } from "../agent/loop"
 
 const log = Log.create({ service: "consolidation-agent" })
 
-const MAX_CONSOLIDATION_TURNS = 10
+const MAX_CONSOLIDATION_TURNS = 20
 const AGENT_TYPE: AgentType = "ltm-consolidate"
 
 /**
