@@ -46,7 +46,7 @@ import { Mcp } from "../mcp"
 
 const log = Log.create({ service: "agent" })
 
-const MAX_TURNS = 50
+const MAX_TURNS = 200
 
 /**
  * Surface any pending background reports to temporal storage.
