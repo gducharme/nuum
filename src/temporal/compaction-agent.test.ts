@@ -209,10 +209,10 @@ describe("view reconstruction with IDs", () => {
 
     const turns = reconstructHistoryAsTurns(view)
 
-    // Should have one user turn with the ID prefix
+    // Should have one user turn with the ID prefix (now includes timestamp)
     expect(turns).toHaveLength(1)
     expect(turns[0].role).toBe("user")
-    expect(turns[0].content).toContain(`[id:${msgId}]`)
+    expect(turns[0].content).toContain(`id:${msgId}]`) // ID is present (with timestamp prefix)
     expect(turns[0].content).toContain("Hello world")
   })
 

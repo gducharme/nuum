@@ -208,10 +208,10 @@ describe("Temporal View Turn Reconstruction", () => {
 
     expect(turns.length).toBe(2)
     expect(turns[0].role).toBe("user")
-    expect(turns[0].content).toContain(`[id:${userId}]`)
+    expect(turns[0].content).toContain(`id:${userId}]`) // ID is present (with timestamp prefix)
     expect(turns[0].content).toContain("Hello there")
     expect(turns[1].role).toBe("assistant")
-    expect(turns[1].content).toContain(`[id:${assistantId}]`)
+    expect(turns[1].content).toContain(`id:${assistantId}]`) // ID is present (with timestamp prefix)
     expect(turns[1].content).toContain("Hi! How can I help?")
   })
 

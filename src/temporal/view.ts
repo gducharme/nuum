@@ -174,11 +174,39 @@ export function reconstructHistoryAsTurns(view: TemporalView): CoreMessage[] {
 }
 
 /**
- * Format message content with ID prefix.
- * The ID prefix allows the compaction agent to reference specific messages.
+ * Format a timestamp for display in message prefixes.
+ * Uses compact format: "2026-01-26 15:30" (24h, no seconds)
  */
-function formatWithId(id: string, content: string): string {
-  return `[id:${id}] ${content}`
+function formatTimestamp(isoTimestamp: string): string {
+  const date = new Date(isoTimestamp)
+  const year = date.getFullYear()
+  const month = String(date.getMonth() + 1).padStart(2, "0")
+  const day = String(date.getDate()).padStart(2, "0")
+  const hours = String(date.getHours()).padStart(2, "0")
+  const minutes = String(date.getMinutes()).padStart(2, "0")
+  return `${year}-${month}-${day} ${hours}:${minutes}`
+}
+
+/**
+ * Format message content with ID and timestamp prefix.
+ * The ID allows the compaction agent to reference specific messages.
+ * The timestamp helps agents reason about time passage.
+ * 
+ * Note: These prefixes are for internal reference only - agents should not
+ * echo them in their responses.
+ */
+function formatWithId(id: string, timestamp: string, content: string): string {
+  return `[${formatTimestamp(timestamp)} id:${id}] ${content}`
+}
+
+/**
+ * Format an ID range with timestamp (for tool call sequences).
+ */
+function formatIdRange(firstId: string, lastId: string, timestamp: string): string {
+  if (firstId === lastId) {
+    return `[${formatTimestamp(timestamp)} id:${firstId}]`
+  }
+  return `[${formatTimestamp(timestamp)} id:${firstId}...${lastId}]`
 }
 
 /**
@@ -195,7 +223,7 @@ function processMessageForTurn(
 
   switch (message.type) {
     case "user":
-      turns.push({ role: "user", content: formatWithId(message.id, message.content) })
+      turns.push({ role: "user", content: formatWithId(message.id, message.createdAt, message.content) })
       return { turns, nextIdx: currentIdx + 1 }
 
     case "assistant": {
@@ -245,9 +273,7 @@ function processMessageForTurn(
       if (toolCalls.length > 0) {
         // Assistant message with tool calls - prefix with ID range
         const assistantContent: (ToolCallPart | { type: "text"; text: string })[] = []
-        const idPrefix = message.id === lastMessageId
-          ? `[id:${message.id}]`
-          : `[id:${message.id}...${lastMessageId}]`
+        const idPrefix = formatIdRange(message.id, lastMessageId, message.createdAt)
         if (message.content) {
           assistantContent.push({ type: "text", text: `${idPrefix} ${message.content}` })
         } else {
@@ -271,7 +297,7 @@ function processMessageForTurn(
         }
       } else {
         // Simple assistant message without tools
-        turns.push({ role: "assistant", content: formatWithId(message.id, message.content) })
+        turns.push({ role: "assistant", content: formatWithId(message.id, message.createdAt, message.content) })
       }
 
       return { turns, nextIdx }
@@ -325,9 +351,7 @@ function processMessageForTurn(
 
       if (toolCalls.length > 0) {
         // Create assistant message with tool calls (no text content)
-        const idPrefix = firstMessageId === lastMessageId
-          ? `[id:${firstMessageId}]`
-          : `[id:${firstMessageId}...${lastMessageId}]`
+        const idPrefix = formatIdRange(firstMessageId, lastMessageId, message.createdAt)
         const assistantContent: (ToolCallPart | { type: "text"; text: string })[] = [
           { type: "text", text: idPrefix },
           ...toolCalls,
@@ -363,7 +387,7 @@ function processMessageForTurn(
       // System messages become assistant messages (context injections)
       turns.push({
         role: "assistant",
-        content: `[system ${formatWithId(message.id, message.content)}]`,
+        content: `[system ${formatWithId(message.id, message.createdAt, message.content)}]`,
       })
       return { turns, nextIdx: currentIdx + 1 }
 

@@ -98,10 +98,12 @@ ${
 }
 **Recency buffer:** ${recencyBuffer} most recent messages are protected
 
-The conversation above contains IDs you can reference:
-- Messages have \`[id:xxx]\` prefixes
+The conversation above contains timestamps and IDs you can reference:
+- Messages have \`[YYYY-MM-DD HH:MM id:xxx]\` prefixes (timestamp + ID)
 - Distillations show \`[distilled from:xxx to:yyy]\` ranges
 - The most recent ${recencyBuffer} messages cannot be distilled (preserve immediate context)
+
+Note: These prefixes are for YOUR reference when creating distillations. Do not echo them in responses.
 
 ## Your Task: Distill, Don't Summarize
 
