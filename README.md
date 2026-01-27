@@ -276,3 +276,9 @@ Infrastructure adapted from [OpenCode](https://github.com/anthropics/opencode):
 ## License
 
 MIT
+
+---
+
+<p align="center">
+  <a href="https://miriad.systems">Miriad</a> is experimental software from <a href="https://sanity.io">Sanity.io</a>
+</p>
