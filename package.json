@@ -1,6 +1,6 @@
 {
   "name": "@miriad-systems/nuum",
-  "version": "0.1.10",
+  "version": "0.1.11",
   "description": "AI coding agent with continuous memory - infinite context across sessions",
   "type": "module",
   "bin": {
@@ -11,7 +11,7 @@
     "src/storage/migrations"
   ],
   "scripts": {
-    "build": "bun build ./src/cli/index.ts --outdir ./dist --target bun && node -e \"const fs=require('fs');const f='./dist/index.js';fs.writeFileSync(f,fs.readFileSync(f,'utf8').replace('#!/usr/bin/env node','#!/usr/bin/env bun'))\"",
+    "build": "bun build ./src/cli/index.ts --outdir ./dist --target bun --define \"BUILD_VERSION='$(node -p \"require('./package.json').version\")'\" --define \"BUILD_GIT_HASH='$(git rev-parse --short HEAD 2>/dev/null || echo unknown)'\" && node -e \"const fs=require('fs');const f='./dist/index.js';fs.writeFileSync(f,fs.readFileSync(f,'utf8').replace('#!/usr/bin/env node','#!/usr/bin/env bun'))\"",
     "dev": "bun run ./src/cli/index.ts",
     "typecheck": "tsc --noEmit",
     "test": "bun test",
