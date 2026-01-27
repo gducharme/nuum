@@ -7,16 +7,13 @@ An AI coding agent with **infinite memory** — continuous context across sessio
 ## Quick Start
 
 ```bash
+export ANTHROPIC_API_KEY=your-key-here
+
 # Install and run interactively
 bunx @miriad-systems/nuum --repl
 
 # Or with npx
 npx @miriad-systems/nuum --repl
-```
-
-Set your API key:
-```bash
-export ANTHROPIC_API_KEY=your-key-here
 ```
 
 That's it. Start chatting. Your agent remembers everything.
@@ -62,7 +59,9 @@ See **[docs/protocol.md](docs/protocol.md)** for the full wire protocol specific
 
 ## Memory Architecture
 
-Nuum has a three-tier memory system that mirrors human cognition:
+Nuum has a three-tier memory system that mirrors human cognition.
+
+**Key insight:** Agents perform best when context is **30-50% full** — informed but not overwhelmed. Nuum's memory system maintains this sweet spot automatically.
 
 ```
 ┌─────────────────────────────────────────────────────────────────────────────┐
@@ -132,6 +131,8 @@ Nuum has a three-tier memory system that mirrors human cognition:
 
 ### Recursive Distillation
 
+**No pause for compaction.** Unlike most coding agents that stop mid-conversation to "compact memory," Nuum's distillation runs in the background while you work. You never wait for memory management — it happens invisibly between turns.
+
 The distillation system is **not summarization** — it's operational intelligence extraction:
 
 **RETAIN** (actionable intelligence):
@@ -152,13 +153,13 @@ Distillations are recursive — older distillations get distilled again, creatin
 
 ### Long-Term Memory Curation
 
-A background worker (the **LTM Curator**) watches conversations and:
+A background worker (the **LTM Curator**) runs continuously in the background:
 
 1. **CAPTURES** important information into knowledge entries
-2. **STRENGTHENS** entries by researching and adding context
+2. **STRENGTHENS** entries by researching and adding context  
 3. **CURATES** the knowledge tree structure
 
-The curator has access to web search, file reading, and the full knowledge base. It works autonomously between turns, filing reports that the main agent sees on the next interaction.
+The curator has access to web search, file reading, and the full knowledge base. It works autonomously — you never see it running, but the agent's knowledge grows over time. Reports are filed silently and surfaced to the main agent on the next interaction.
 
 ### Reflection
 
