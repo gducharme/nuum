@@ -37,15 +37,11 @@ nuum --db ./project.db --repl         # Custom database
 
 ---
 
-## YOLO Mode
+## ⚠️ Experimental Software
 
-Nuum runs in **full autonomy mode** — no permission prompts, no confirmations. The agent executes tools directly without asking. This is intentional:
+Nuum currently runs in **full autonomy mode** — no permission prompts, no confirmations. It was created for [Miriad](https://miriad.systems) as an embedded agent engine, typically running in containerized environments where the host platform manages security.
 
-- Designed for embedding where a host application manages permissions
-- Optimized for flow — interruptions break agent effectiveness  
-- Trust is established at the system level, not per-action
-
-If you need permission controls, implement them in your host application using the wire protocol.
+**Why we built this:** We were frustrated with how traditional coding agents seem to get "senile" after prolonged use — forgetting context, repeating mistakes, losing track of decisions. Nuum explores how to keep agents effective indefinitely through recursive memory compression and persistent knowledge.
 
 ---
 
