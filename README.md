@@ -24,7 +24,6 @@ That's it. Start chatting. Your agent remembers everything.
 /help     Show available commands
 /inspect  Show memory statistics
 /dump     Show full system prompt
-/clear    Clear conversation (fresh session)
 /quit     Exit
 ```
 
@@ -35,6 +34,46 @@ nuum -p "What files are in src/"     # Single prompt
 nuum --inspect                        # View memory stats
 nuum --db ./project.db --repl         # Custom database
 ```
+
+---
+
+## YOLO Mode
+
+Nuum runs in **full autonomy mode** — no permission prompts, no confirmations. The agent executes tools directly without asking. This is intentional:
+
+- Designed for embedding where a host application manages permissions
+- Optimized for flow — interruptions break agent effectiveness  
+- Trust is established at the system level, not per-action
+
+If you need permission controls, implement them in your host application using the wire protocol.
+
+---
+
+## MCP Servers
+
+Nuum supports [Model Context Protocol](https://modelcontextprotocol.io/) servers for extended capabilities. Configure via environment variable:
+
+```bash
+export NUUM_MCP_SERVERS='{
+  "filesystem": {
+    "command": "npx",
+    "args": ["-y", "@modelcontextprotocol/server-filesystem", "/path/to/allowed/dir"]
+  },
+  "github": {
+    "command": "npx", 
+    "args": ["-y", "@modelcontextprotocol/server-github"],
+    "env": { "GITHUB_TOKEN": "your-token" }
+  }
+}'
+```
+
+Or pass via protocol when embedding:
+
+```json
+{"type":"user","message":{...},"mcp_servers":{"name":{"command":"...","args":[...]}}}
+```
+
+MCP tools appear alongside built-in tools. The agent discovers and uses them automatically.
 
 ---
 

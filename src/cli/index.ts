@@ -12,7 +12,6 @@ import { runBatch } from "./batch"
 import { runInspect, runDump, runCompact } from "./inspect"
 import { runServer } from "../jsonrpc"
 import { runRepl } from "./repl"
-import { runProtocolRepl } from "./repl-protocol"
 import { VERSION_STRING } from "../version"
 
 interface CliOptions {
@@ -27,7 +26,6 @@ interface CliOptions {
   compact: boolean
   stdio: boolean
   repl: boolean
-  replProtocol: boolean
 }
 
 function parseCliArgs(): CliOptions {
@@ -44,7 +42,6 @@ function parseCliArgs(): CliOptions {
       compact: { type: "boolean", default: false },
       stdio: { type: "boolean", default: false },
       repl: { type: "boolean", default: false },
-      "repl-protocol": { type: "boolean", default: false },
     },
     allowPositionals: false,
   })
@@ -61,7 +58,6 @@ function parseCliArgs(): CliOptions {
     compact: values.compact ?? false,
     stdio: values.stdio ?? false,
     repl: values.repl ?? false,
-    replProtocol: values["repl-protocol"] ?? false,
   }
 }
 
@@ -75,7 +71,6 @@ Usage:
   miriad-code -p "prompt"           Run agent with a prompt
   miriad-code -p "prompt" --verbose Show debug output
   miriad-code --repl                Start interactive REPL mode
-  miriad-code --repl-protocol       Start REPL using protocol server (for testing)
   miriad-code --stdio               Start protocol server over stdin/stdout
   miriad-code --inspect             Show memory stats (no LLM call)
   miriad-code --dump                Show raw system prompt (no LLM call)
@@ -86,7 +81,6 @@ Options:
   -p, --prompt <text>   The prompt to send to the agent
   -v, --verbose         Show memory state, token usage, and execution trace
       --repl            Start interactive REPL with readline support
-      --repl-protocol   Start REPL that uses protocol server (test mid-turn messages)
       --stdio           Start Claude Code SDK protocol server on stdin/stdout
       --inspect         Show memory statistics: temporal, present, LTM
       --dump            Dump the full system prompt that would be sent to LLM
@@ -147,22 +141,6 @@ async function main(): Promise<void> {
     try {
       await runRepl({ dbPath: options.db })
       // runRepl keeps running until user quits
-    } catch (error) {
-      if (error instanceof Error) {
-        console.error(`Error: ${error.message}`)
-      } else {
-        console.error("Unknown error:", error)
-      }
-      process.exit(1)
-    }
-    return
-  }
-
-  // Handle --repl-protocol (protocol testing mode)
-  if (options.replProtocol) {
-    try {
-      await runProtocolRepl({ dbPath: options.db })
-      // runProtocolRepl keeps running until user quits
     } catch (error) {
       if (error instanceof Error) {
         console.error(`Error: ${error.message}`)

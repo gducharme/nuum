@@ -4,7 +4,7 @@
  * Human-friendly interactive mode with:
  * - Proper readline (history, arrow keys, Ctrl+R)
  * - Persistent history file
- * - Commands: /quit, /clear, /inspect, /dump, /help
+ * - Commands: /quit, /inspect, /dump, /help
  * - Streaming output with tool progress
  * - Ctrl+C interrupts request, Ctrl+D exits
  */
@@ -146,14 +146,6 @@ export class ReplSession {
         process.exit(0)
         break
 
-      case "clear":
-        // Clear temporal history by reinitializing storage
-        this.storage = createStorage(this.options.dbPath)
-        await initializeDefaultEntries(this.storage)
-        console.log("Conversation cleared. Starting fresh session.")
-        this.rl?.prompt()
-        break
-
       case "inspect":
         try {
           await runInspect(this.options.dbPath)
@@ -194,7 +186,7 @@ export class ReplSession {
     console.log("Commands:")
     console.log("  /help, /h, /?    Show this help")
     console.log("  /quit, /exit, /q Exit the REPL")
-    console.log("  /clear           Clear conversation history (fresh session)")
+
     console.log("  /inspect         Show memory statistics")
     console.log("  /dump            Show full system prompt")
     console.log()
