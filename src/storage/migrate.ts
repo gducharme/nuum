@@ -27,10 +27,10 @@ function getMigrationsDir(): string {
   // In bundled mode, we need to find the package root and look in src/storage/migrations
   // The bundle runs from dist/index.js, but migrations are in src/storage/migrations/
   
-  // Try to find package root by looking for node_modules/@miriad-systems/nuum
-  if (currentDir.includes("node_modules/@miriad-systems/nuum")) {
-    const packageRoot = currentDir.split("node_modules/@miriad-systems/nuum")[0] + 
-      "node_modules/@miriad-systems/nuum"
+  // Try to find package root by looking for node_modules/@sanity-labs/nuum
+  if (currentDir.includes("node_modules/@sanity-labs/nuum")) {
+    const packageRoot = currentDir.split("node_modules/@sanity-labs/nuum")[0] + 
+      "node_modules/@sanity-labs/nuum"
     return join(packageRoot, "src/storage/migrations")
   }
   

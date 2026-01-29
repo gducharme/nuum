@@ -10,10 +10,10 @@ An AI coding agent with **"infinite memory"** — continuous context across sess
 export ANTHROPIC_API_KEY=your-key-here
 
 # Install and run interactively
-bunx @miriad-systems/nuum --repl
+bunx @sanity-labs/nuum --repl
 
 # Or with npx
-npx @miriad-systems/nuum --repl
+npx @sanity-labs/nuum --repl
 ```
 
 That's it. Start chatting. Your agent remembers everything.

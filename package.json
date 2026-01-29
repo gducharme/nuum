@@ -1,6 +1,6 @@
 {
-  "name": "@miriad-systems/nuum",
-  "version": "0.1.14",
+  "name": "@sanity-labs/nuum",
+  "version": "0.2.0",
   "description": "AI coding agent with continuous memory - infinite context across sessions",
   "type": "module",
   "bin": {

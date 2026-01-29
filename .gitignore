@@ -38,3 +38,7 @@ bun.lockb
 
 # Drizzle
 drizzle/
+
+# Agents
+.agents
+.claude
