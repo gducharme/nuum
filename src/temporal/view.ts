@@ -210,6 +210,37 @@ function formatIdRange(firstId: string, lastId: string, timestamp: string): stri
 }
 
 /**
+ * Ensure all tool calls have corresponding results.
+ * If a tool call is missing its result (e.g., due to crash or disk full),
+ * synthesize an error result so the conversation remains valid.
+ */
+function ensureAllToolCallsHaveResults(
+  toolCalls: ToolCallPart[],
+  toolResults: ToolResultPart[],
+): ToolResultPart[] {
+  if (toolResults.length >= toolCalls.length) {
+    return toolResults
+  }
+
+  // Synthesize error results for missing tool calls
+  const completeResults = [...toolResults]
+  for (let i = toolResults.length; i < toolCalls.length; i++) {
+    const call = toolCalls[i]
+    log.warn("synthesizing error result for orphaned tool call", {
+      toolCallId: call.toolCallId,
+      toolName: call.toolName,
+    })
+    completeResults.push({
+      type: "tool-result",
+      toolCallId: call.toolCallId,
+      toolName: call.toolName,
+      result: "Error: Tool execution failed (no result recorded - possible crash or disk full)",
+    })
+  }
+  return completeResults
+}
+
+/**
  * Process a message and potentially following related messages into CoreMessage turns.
  * Groups tool_call + tool_result sequences together.
  * All messages include their ULID as a prefix for compaction agent reference.
@@ -287,14 +318,13 @@ function processMessageForTurn(
         }
         turns.push(assistantMsg)
 
-        // Tool results
-        if (toolResults.length > 0) {
-          const toolMsg: CoreToolMessage = {
-            role: "tool",
-            content: toolResults,
-          }
-          turns.push(toolMsg)
+        // Tool results - ensure all tool calls have results (synthesize errors for missing ones)
+        const completeResults = ensureAllToolCallsHaveResults(toolCalls, toolResults)
+        const toolMsg: CoreToolMessage = {
+          role: "tool",
+          content: completeResults,
         }
+        turns.push(toolMsg)
       } else {
         // Simple assistant message without tools
         turns.push({ role: "assistant", content: formatWithId(message.id, message.createdAt, message.content) })
@@ -363,14 +393,13 @@ function processMessageForTurn(
         }
         turns.push(assistantMsg)
 
-        // Tool results
-        if (toolResults.length > 0) {
-          const toolMsg: CoreToolMessage = {
-            role: "tool",
-            content: toolResults,
-          }
-          turns.push(toolMsg)
+        // Tool results - ensure all tool calls have results (synthesize errors for missing ones)
+        const completeResults = ensureAllToolCallsHaveResults(toolCalls, toolResults)
+        const toolMsg: CoreToolMessage = {
+          role: "tool",
+          content: completeResults,
         }
+        turns.push(toolMsg)
       }
 
       return { turns, nextIdx }
