@@ -69,6 +69,20 @@ export const BackgroundResearchTool = Tool.define<typeof parameters, BackgroundR
         }
       }
 
+      // Check for max concurrent tasks (prevent runaway spawning)
+      const MAX_CONCURRENT_TASKS = 3
+      const runningTasks = await storage.tasks.listTasks({ status: "running" })
+      if (runningTasks.length >= MAX_CONCURRENT_TASKS) {
+        return {
+          output: `Too many background tasks running (${runningTasks.length}/${MAX_CONCURRENT_TASKS}). Wait for some to complete or cancel them with cancel_task.`,
+          title: "Too many tasks",
+          metadata: {
+            taskId: "",
+            topic,
+          },
+        }
+      }
+
       // Create the task record
       const taskId = await storage.tasks.createTask({
         type: "research",

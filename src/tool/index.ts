@@ -50,3 +50,5 @@ export { buildReflectionTools, type ReflectionToolContext } from "../reflection/
 export { ListTasksTool, type ListTasksToolContext, type ListTasksMetadata } from "./list-tasks"
 export { SetAlarmTool, type SetAlarmToolContext, type SetAlarmMetadata } from "./set-alarm"
 export { BackgroundResearchTool, type BackgroundResearchToolContext, type BackgroundResearchMetadata } from "./background-research"
+export { BackgroundReflectTool, type BackgroundReflectToolContext, type BackgroundReflectMetadata } from "./background-reflect"
+export { CancelTaskTool, type CancelTaskToolContext, type CancelTaskMetadata } from "./cancel-task"

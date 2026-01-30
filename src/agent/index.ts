@@ -38,12 +38,16 @@ import {
   ListTasksTool,
   SetAlarmTool,
   BackgroundResearchTool,
+  BackgroundReflectTool,
+  CancelTaskTool,
   type LTMToolContext,
   type ReflectToolContext,
   type ResearchToolContext,
   type ListTasksToolContext,
   type SetAlarmToolContext,
   type BackgroundResearchToolContext,
+  type BackgroundReflectToolContext,
+  type CancelTaskToolContext,
 } from "../tool"
 import { runAgentLoop, AgentLoopCancelledError } from "./loop"
 import { buildAgentContext } from "../context"
@@ -558,6 +562,22 @@ function buildTools(
     parameters: BackgroundResearchTool.definition.parameters,
     execute: async (args, { toolCallId }) =>
       safeExecute("background_research", () => BackgroundResearchTool.definition.execute(args, factory.createResearchContext(toolCallId))),
+  })
+
+  // Background reflect tool - spawn reflection in background
+  tools.background_reflect = tool({
+    description: BackgroundReflectTool.definition.description,
+    parameters: BackgroundReflectTool.definition.parameters,
+    execute: async (args, { toolCallId }) =>
+      safeExecute("background_reflect", () => BackgroundReflectTool.definition.execute(args, factory.createReflectContext(toolCallId))),
+  })
+
+  // Cancel task tool - cancel a running background task
+  tools.cancel_task = tool({
+    description: CancelTaskTool.definition.description,
+    parameters: CancelTaskTool.definition.parameters,
+    execute: async (args, { toolCallId }) =>
+      safeExecute("cancel_task", () => CancelTaskTool.definition.execute(args, factory.createListTasksContext(toolCallId))),
   })
 
   return tools
