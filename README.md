@@ -41,7 +41,7 @@ nuum --db ./project.db --repl         # Custom database
 
 Nuum currently runs in **full autonomy mode** — no permission prompts, no confirmations. It was created for [Miriad](https://miriad.systems) as an embedded agent engine, typically running in containerized environments where the host platform manages security.
 
-**Why we built this:** We were frustrated with how traditional coding agents seem to suffer some kind of contextual collapse after prolonged use — getting mixed up, repeating mistakes, losing track of decisions. Nuum explores how to keep agents effective indefinitely through recursive memory compression and persistent knowledge.
+**Why we built this:** We were frustrated with how traditional coding agents seem to suffer some kind of contextual collapse after prolonged use — getting mixed up, repeating mistakes, losing track of decisions. Nuum explores how to keep agents effective indefinitely through selective, recursive memory compression and active knowledge management.
 
 ---
 
