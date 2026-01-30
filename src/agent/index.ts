@@ -37,11 +37,13 @@ import {
   ResearchTool,
   ListTasksTool,
   SetAlarmTool,
+  BackgroundResearchTool,
   type LTMToolContext,
   type ReflectToolContext,
   type ResearchToolContext,
   type ListTasksToolContext,
   type SetAlarmToolContext,
+  type BackgroundResearchToolContext,
 } from "../tool"
 import { runAgentLoop, AgentLoopCancelledError } from "./loop"
 import { buildAgentContext } from "../context"
@@ -548,6 +550,14 @@ function buildTools(
     parameters: SetAlarmTool.definition.parameters,
     execute: async (args, { toolCallId }) =>
       safeExecute("set_alarm", () => SetAlarmTool.definition.execute(args, factory.createListTasksContext(toolCallId))),
+  })
+
+  // Background research tool - spawn research in background
+  tools.background_research = tool({
+    description: BackgroundResearchTool.definition.description,
+    parameters: BackgroundResearchTool.definition.parameters,
+    execute: async (args, { toolCallId }) =>
+      safeExecute("background_research", () => BackgroundResearchTool.definition.execute(args, factory.createResearchContext(toolCallId))),
   })
 
   return tools

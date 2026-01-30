@@ -216,7 +216,7 @@ export class Server {
   }
 
   /**
-   * Check for due alarms and trigger self-turns if needed.
+   * Check for due alarms and queued results, trigger self-turns if needed.
    */
   private async checkAlarms(): Promise<void> {
     // Prevent re-entrancy
@@ -224,24 +224,28 @@ export class Server {
     this.checkingAlarms = true
 
     try {
+      // Check for due alarms
       const dueAlarms = await this.storage.tasks.getDueAlarms()
-      if (dueAlarms.length === 0) return
+      if (dueAlarms.length > 0) {
+        log.info("alarms fired", { count: dueAlarms.length })
 
-      log.info("alarms fired", { count: dueAlarms.length })
-
-      // Mark alarms as fired and queue results
-      for (const alarm of dueAlarms) {
-        await this.storage.tasks.markAlarmFired(alarm.id)
-        
-        // Queue to conscious queue
-        await this.storage.tasks.queueResult(
-          alarm.id,
-          `⏰ **Alarm fired**: ${alarm.note}`
-        )
+        // Mark alarms as fired and queue results
+        for (const alarm of dueAlarms) {
+          await this.storage.tasks.markAlarmFired(alarm.id)
+          
+          // Queue to conscious queue
+          await this.storage.tasks.queueResult(
+            alarm.id,
+            `⏰ **Alarm fired**: ${alarm.note}`
+          )
+        }
       }
 
-      // If no turn is running, trigger a self-turn
-      if (!this.currentTurn && !this.processing) {
+      // Check if there are any queued results (from alarms or background tasks)
+      const hasResults = await this.storage.tasks.hasQueuedResults()
+      
+      // If no turn is running and we have results, trigger a self-turn
+      if (hasResults && !this.currentTurn && !this.processing) {
         await this.triggerSelfTurn()
       }
     } finally {
