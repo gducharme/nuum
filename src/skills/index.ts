@@ -167,6 +167,11 @@ function scanSubdirectories(dir: string, skills: Map<string, Skill>): void {
   }
 }
 
+export interface DiscoverSkillsOptions {
+  cwd?: string
+  home?: string
+}
+
 /**
  * Discover all available skills.
  *
@@ -175,9 +180,10 @@ function scanSubdirectories(dir: string, skills: Map<string, Skill>): void {
  * 2. $CWD/<subdir>/.nuum/skills/, etc. (one level down)
  * 3. $HOME/.nuum/skills/, etc. (global skills)
  */
-export function discoverSkills(cwd: string = process.cwd()): Skill[] {
+export function discoverSkills(options: DiscoverSkillsOptions = {}): Skill[] {
+  const cwd = options.cwd ?? process.cwd()
+  const home = options.home ?? homedir()
   const skills = new Map<string, Skill>()
-  const home = homedir()
 
   // 1. Scan $CWD
   scanDirectory(cwd, skills)
@@ -243,7 +249,7 @@ let cachedCwd: string | null = null
  */
 export function getSkills(cwd: string = process.cwd()): Skill[] {
   if (cachedSkills === null || cachedCwd !== cwd) {
-    cachedSkills = discoverSkills(cwd)
+    cachedSkills = discoverSkills({ cwd })
     cachedCwd = cwd
   }
   return cachedSkills

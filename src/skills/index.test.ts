@@ -46,7 +46,7 @@ Instructions here...
     it("discovers skills in $CWD/.nuum/skills/", () => {
       createSkill(testDir, ".nuum", "deploy", "Deploy to production")
 
-      const skills = discoverSkills(testDir)
+      const skills = discoverSkills({ cwd: testDir, home: homeDir })
 
       expect(skills).toHaveLength(1)
       expect(skills[0].name).toBe("deploy")
@@ -57,7 +57,7 @@ Instructions here...
     it("discovers skills in $CWD/.claude/skills/", () => {
       createSkill(testDir, ".claude", "testing", "Run tests")
 
-      const skills = discoverSkills(testDir)
+      const skills = discoverSkills({ cwd: testDir, home: homeDir })
 
       expect(skills).toHaveLength(1)
       expect(skills[0].name).toBe("testing")
@@ -66,7 +66,7 @@ Instructions here...
     it("discovers skills in $CWD/.codex/skills/", () => {
       createSkill(testDir, ".codex", "lint", "Run linter")
 
-      const skills = discoverSkills(testDir)
+      const skills = discoverSkills({ cwd: testDir, home: homeDir })
 
       expect(skills).toHaveLength(1)
       expect(skills[0].name).toBe("lint")
@@ -77,7 +77,7 @@ Instructions here...
       createSkill(testDir, ".claude", "deploy", "Claude deploy")
       createSkill(testDir, ".codex", "deploy", "Codex deploy")
 
-      const skills = discoverSkills(testDir)
+      const skills = discoverSkills({ cwd: testDir, home: homeDir })
 
       expect(skills).toHaveLength(1)
       expect(skills[0].name).toBe("deploy")
@@ -90,7 +90,7 @@ Instructions here...
       mkdirSync(repoDir, { recursive: true })
       createSkill(repoDir, ".claude", "repo-skill", "Skill from repo")
 
-      const skills = discoverSkills(testDir)
+      const skills = discoverSkills({ cwd: testDir, home: homeDir })
 
       expect(skills).toHaveLength(1)
       expect(skills[0].name).toBe("repo-skill")
@@ -104,7 +104,7 @@ Instructions here...
       mkdirSync(repoDir, { recursive: true })
       createSkill(repoDir, ".nuum", "deploy", "Repo deploy")
 
-      const skills = discoverSkills(testDir)
+      const skills = discoverSkills({ cwd: testDir, home: homeDir })
 
       expect(skills).toHaveLength(1)
       expect(skills[0].description).toBe("CWD deploy")
@@ -118,7 +118,7 @@ Instructions here...
       mkdirSync(repoDir, { recursive: true })
       createSkill(repoDir, ".codex", "lint", "Lint skill")
 
-      const skills = discoverSkills(testDir)
+      const skills = discoverSkills({ cwd: testDir, home: homeDir })
 
       expect(skills).toHaveLength(3)
       const names = skills.map(s => s.name).sort()
@@ -138,7 +138,7 @@ description: Should be skipped
 `
       )
 
-      const skills = discoverSkills(testDir)
+      const skills = discoverSkills({ cwd: testDir, home: homeDir })
 
       expect(skills).toHaveLength(0)
     })
@@ -154,7 +154,7 @@ Just some content without YAML frontmatter.
 `
       )
 
-      const skills = discoverSkills(testDir)
+      const skills = discoverSkills({ cwd: testDir, home: homeDir })
 
       expect(skills).toHaveLength(0)
     })
@@ -172,7 +172,7 @@ No description field.
 `
       )
 
-      const skills = discoverSkills(testDir)
+      const skills = discoverSkills({ cwd: testDir, home: homeDir })
 
       expect(skills).toHaveLength(0)
     })
@@ -181,7 +181,7 @@ No description field.
       const longDesc = "A".repeat(300)
       createSkill(testDir, ".nuum", "verbose", longDesc)
 
-      const skills = discoverSkills(testDir)
+      const skills = discoverSkills({ cwd: testDir, home: homeDir })
 
       expect(skills).toHaveLength(1)
       expect(skills[0].description.length).toBe(255)
@@ -189,7 +189,7 @@ No description field.
     })
 
     it("returns empty array when no skills found", () => {
-      const skills = discoverSkills(testDir)
+      const skills = discoverSkills({ cwd: testDir, home: homeDir })
 
       expect(skills).toHaveLength(0)
     })
@@ -199,9 +199,40 @@ No description field.
       mkdirSync(hiddenDir, { recursive: true })
       createSkill(hiddenDir, ".nuum", "hidden-skill", "Should not be found")
 
-      const skills = discoverSkills(testDir)
+      const skills = discoverSkills({ cwd: testDir, home: homeDir })
 
       expect(skills).toHaveLength(0)
+    })
+
+    it("discovers skills in $HOME/.nuum/skills/", () => {
+      createSkill(homeDir, ".nuum", "global-skill", "Global skill from home")
+
+      const skills = discoverSkills({ cwd: testDir, home: homeDir })
+
+      expect(skills).toHaveLength(1)
+      expect(skills[0].name).toBe("global-skill")
+      expect(skills[0].description).toBe("Global skill from home")
+    })
+
+    it("$CWD skills take precedence over $HOME skills", () => {
+      createSkill(testDir, ".nuum", "deploy", "CWD deploy")
+      createSkill(homeDir, ".nuum", "deploy", "HOME deploy")
+
+      const skills = discoverSkills({ cwd: testDir, home: homeDir })
+
+      expect(skills).toHaveLength(1)
+      expect(skills[0].description).toBe("CWD deploy")
+    })
+
+    it("combines $CWD and $HOME skills", () => {
+      createSkill(testDir, ".nuum", "local-skill", "Local skill")
+      createSkill(homeDir, ".claude", "global-skill", "Global skill")
+
+      const skills = discoverSkills({ cwd: testDir, home: homeDir })
+
+      expect(skills).toHaveLength(2)
+      const names = skills.map(s => s.name).sort()
+      expect(names).toEqual(["global-skill", "local-skill"])
     })
   })
 
@@ -258,7 +289,7 @@ No description field.
       createSkill(testDir, ".claude", "another123", "Also valid")
       createSkill(testDir, ".codex", "a", "Single char")
 
-      const skills = discoverSkills(testDir)
+      const skills = discoverSkills({ cwd: testDir, home: homeDir })
 
       expect(skills).toHaveLength(3)
     })
@@ -272,7 +303,7 @@ description: Has uppercase
 ---
 `)
 
-      const skills = discoverSkills(testDir)
+      const skills = discoverSkills({ cwd: testDir, home: homeDir })
       expect(skills).toHaveLength(0)
     })
 
@@ -285,7 +316,7 @@ description: Starts with hyphen
 ---
 `)
 
-      const skills = discoverSkills(testDir)
+      const skills = discoverSkills({ cwd: testDir, home: homeDir })
       expect(skills).toHaveLength(0)
     })
 
@@ -298,7 +329,7 @@ description: Ends with hyphen
 ---
 `)
 
-      const skills = discoverSkills(testDir)
+      const skills = discoverSkills({ cwd: testDir, home: homeDir })
       expect(skills).toHaveLength(0)
     })
 
@@ -311,7 +342,7 @@ description: Has consecutive hyphens
 ---
 `)
 
-      const skills = discoverSkills(testDir)
+      const skills = discoverSkills({ cwd: testDir, home: homeDir })
       expect(skills).toHaveLength(0)
     })
 
@@ -325,7 +356,7 @@ description: Name too long
 ---
 `)
 
-      const skills = discoverSkills(testDir)
+      const skills = discoverSkills({ cwd: testDir, home: homeDir })
       expect(skills).toHaveLength(0)
     })
   })
