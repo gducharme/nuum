@@ -35,9 +35,11 @@ import {
   LTMReadTool,
   ReflectTool,
   ResearchTool,
+  ListTasksTool,
   type LTMToolContext,
   type ReflectToolContext,
   type ResearchToolContext,
+  type ListTasksToolContext,
 } from "../tool"
 import { runAgentLoop, AgentLoopCancelledError } from "./loop"
 import { buildAgentContext } from "../context"
@@ -283,6 +285,7 @@ interface ToolContextFactory {
   createLTMContext(callId: string): Tool.Context & { extra: LTMToolContext }
   createReflectContext(callId: string): Tool.Context & { extra: ReflectToolContext }
   createResearchContext(callId: string): Tool.Context & { extra: ResearchToolContext }
+  createListTasksContext(callId: string): Tool.Context & { extra: ListTasksToolContext }
 }
 
 function createToolContextFactory(
@@ -332,6 +335,16 @@ function createToolContextFactory(
       }) as Tool.Context & { extra: ResearchToolContext }
       ctx.extra = {
         storage,
+      }
+      return ctx
+    },
+    createListTasksContext(callId: string): Tool.Context & { extra: ListTasksToolContext } {
+      const ctx = Tool.createContext({
+        ...baseContext,
+        callID: callId,
+      }) as Tool.Context & { extra: ListTasksToolContext }
+      ctx.extra = {
+        tasks: storage.tasks,
       }
       return ctx
     },
@@ -517,6 +530,14 @@ function buildTools(
     parameters: ResearchTool.definition.parameters,
     execute: async (args, { toolCallId }) =>
       safeExecute("research", () => ResearchTool.definition.execute(args, factory.createResearchContext(toolCallId))),
+  })
+
+  // List tasks tool - show background tasks and alarms
+  tools.list_tasks = tool({
+    description: ListTasksTool.definition.description,
+    parameters: ListTasksTool.definition.parameters,
+    execute: async (args, { toolCallId }) =>
+      safeExecute("list_tasks", () => ListTasksTool.definition.execute(args, factory.createListTasksContext(toolCallId))),
   })
 
   return tools

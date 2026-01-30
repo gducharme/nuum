@@ -63,6 +63,7 @@ export class Server {
   async start(): Promise<void> {
     await cleanupStaleWorkers(this.storage)
     await initializeDefaultEntries(this.storage)
+    await this.recoverKilledTasks()
 
     // Get or create session ID (persisted in database)
     this.sessionId = await this.storage.session.getId()
@@ -151,6 +152,31 @@ export class Server {
           }),
         )
         break
+    }
+  }
+
+  /**
+   * Recover tasks that were killed when the agent restarted.
+   * Files reports to the subconscious queue so agent learns about them.
+   */
+  private async recoverKilledTasks(): Promise<void> {
+    const killedTasks = await this.storage.tasks.recoverKilledTasks()
+    
+    if (killedTasks.length === 0) return
+    
+    log.info("recovered killed tasks", { count: killedTasks.length })
+    
+    // File each killed task to the subconscious queue (background reports)
+    for (const task of killedTasks) {
+      await this.storage.background.fileReport({
+        subsystem: "task_recovery",
+        report: {
+          message: `Background task was killed when agent restarted: ${task.type} - "${task.description}". You may want to restart it.`,
+          taskId: task.id,
+          type: task.type,
+          description: task.description,
+        },
+      })
     }
   }
 
