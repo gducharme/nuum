@@ -38,10 +38,11 @@ export class ReplSession {
   private isRunning = false
 
   constructor(private options: ReplOptions) {
-    // Create server with REPL output handler
+    // Create server with REPL output handler, no stdin (REPL handles input)
     this.server = new Server({
       dbPath: options.dbPath,
       outputHandler: (message) => this.handleServerOutput(message),
+      noStdin: true,
     })
   }
 
