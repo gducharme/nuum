@@ -57,9 +57,12 @@ export async function shouldTriggerCompaction(
  *
  * Without this, the estimate undercounts actual API tokens by ~40-50%,
  * causing compaction to trigger too late (e.g., estimate 103k = actual 160k).
+ *
+ * Configurable via AGENT_TOKEN_BUDGET_CONTEXT_OVERHEAD_TOKENS, including provider
+ * and tier overrides (AGENT_TOKEN_BUDGET_PROVIDER_* / AGENT_TOKEN_BUDGET_TIER_*).
  */
 export function getContextOverheadTokens(): number {
-  return Config.getTokenBudgetsForTier("reasoning").contextOverheadTokens
+  return Config.getTokenBudgetsForTier("reasoning").contextOverheadTokens ?? 40_000
 }
 
 /**
