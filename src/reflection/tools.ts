@@ -17,6 +17,7 @@ import type { Storage } from "../storage"
 import {
   applyTokenBudgetToBlocks,
   applyTokenBudgetToContextBlocks,
+  capResultsToTokenBudget,
 } from "../temporal/query-budget"
 import { activity } from "../util/activity-log"
 import {
@@ -42,6 +43,8 @@ export interface ReflectionToolContext {
 function buildSearchMessagesTool(ctx: ReflectionToolContext): CoreTool {
   const { storage } = ctx
   const { temporalQueryBudget } = Config.getTokenBudgetsForTier("workhorse")
+  const defaultLimit = 20
+  const resultTokenEstimate = 64
 
   return tool({
     description:
@@ -54,8 +57,16 @@ function buildSearchMessagesTool(ctx: ReflectionToolContext): CoreTool {
         .describe("Maximum results to return (default: 20)"),
     }),
     execute: async ({ query, limit }) => {
-      activity.reflection.toolCall("search_messages", { query, limit })
-      const results = await storage.temporal.searchFTS(query, limit ?? 20)
+      const effectiveLimit = capResultsToTokenBudget(
+        limit ?? defaultLimit,
+        temporalQueryBudget,
+        resultTokenEstimate,
+      )
+      activity.reflection.toolCall("search_messages", {
+        query,
+        limit: effectiveLimit,
+      })
+      const results = await storage.temporal.searchFTS(query, effectiveLimit)
 
       if (results.length === 0) {
         activity.reflection.toolResult("search_messages", "0 matches")
@@ -88,6 +99,7 @@ function buildSearchMessagesTool(ctx: ReflectionToolContext): CoreTool {
 function buildGetMessageTool(ctx: ReflectionToolContext): CoreTool {
   const { storage } = ctx
   const { temporalQueryBudget } = Config.getTokenBudgetsForTier("workhorse")
+  const contextTokenEstimate = 256
 
   return tool({
     description:
@@ -104,11 +116,25 @@ function buildGetMessageTool(ctx: ReflectionToolContext): CoreTool {
         .describe("Number of messages to include after (default: 0)"),
     }),
     execute: async ({ id, contextBefore, contextAfter }) => {
-      activity.reflection.toolCall("get_message", { id, contextBefore, contextAfter })
+      const cappedContextBefore = capResultsToTokenBudget(
+        contextBefore ?? 0,
+        temporalQueryBudget,
+        contextTokenEstimate,
+      )
+      const cappedContextAfter = capResultsToTokenBudget(
+        contextAfter ?? 0,
+        temporalQueryBudget,
+        contextTokenEstimate,
+      )
+      activity.reflection.toolCall("get_message", {
+        id,
+        contextBefore: cappedContextBefore,
+        contextAfter: cappedContextAfter,
+      })
       const messages = await storage.temporal.getMessageWithContext({
         id,
-        contextBefore: contextBefore ?? 0,
-        contextAfter: contextAfter ?? 0,
+        contextBefore: cappedContextBefore,
+        contextAfter: cappedContextAfter,
       })
 
       if (messages.length === 0) {
