@@ -17,6 +17,7 @@ import type { Storage } from "../storage"
 import {
   applyTokenBudgetToBlocks,
   applyTokenBudgetToContextBlocks,
+  applyTokenBudgetToString,
   capResultsToTokenBudget,
 } from "../temporal/query-budget"
 import { activity } from "../util/activity-log"
@@ -84,9 +85,14 @@ function buildSearchMessagesTool(ctx: ReflectionToolContext): CoreTool {
       const budgetNote = truncated
         ? ` (showing ${shownMatches} of ${totalMatches} due to temporal query budget)`
         : ""
+      const output = `Found ${shownMatches} messages${budgetNote}:\n\n${formatted}`
+      const { text: cappedOutput } = applyTokenBudgetToString(
+        output,
+        temporalQueryBudget,
+      )
 
       activity.reflection.toolResult("search_messages", `${shownMatches} matches`)
-      return `Found ${shownMatches} messages${budgetNote}:\n\n${formatted}`
+      return cappedOutput
     },
   })
 }
@@ -153,9 +159,13 @@ function buildGetMessageTool(ctx: ReflectionToolContext): CoreTool {
         temporalQueryBudget,
       )
       const formatted = blocks.join("\n\n")
+      const { text: cappedOutput } = applyTokenBudgetToString(
+        formatted,
+        temporalQueryBudget,
+      )
 
       activity.reflection.toolResult("get_message", `${blocks.length} messages`)
-      return formatted
+      return cappedOutput
     },
   })
 }
