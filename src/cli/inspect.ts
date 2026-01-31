@@ -151,9 +151,8 @@ interface MemoryStats {
  * Gather memory statistics.
  */
 async function getMemoryStats(storage: Storage): Promise<MemoryStats> {
-  const config = Config.get()
-  const compactionThreshold = config.tokenBudgets.compactionThreshold
-  const compactionTarget = config.tokenBudgets.compactionTarget
+  const { compactionThreshold, compactionTarget } =
+    Config.getTokenBudgetsForTier("reasoning")
 
   // Get temporal data
   const messages = await storage.temporal.getMessages()
@@ -405,9 +404,8 @@ export async function runCompact(dbPath: string): Promise<void> {
   const storage = createStorage(dbPath)
   await initializeDefaultEntries(storage)
 
-  const config = Config.get()
-  const threshold = config.tokenBudgets.compactionThreshold
-  const target = config.tokenBudgets.compactionTarget
+  const { compactionThreshold: threshold, compactionTarget: target } =
+    Config.getTokenBudgetsForTier("reasoning")
 
   // Check current size
   const tokensBefore = await getEffectiveViewTokens(storage.temporal)

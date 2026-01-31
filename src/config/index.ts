@@ -14,6 +14,104 @@ export namespace Config {
    */
   export type ModelTier = "reasoning" | "workhorse" | "fast";
 
+  const TokenBudgetSchema = z.object({
+    /** Main agent context limit (Opus 200k, leave room for response) */
+    mainAgentContext: z.number().default(180_000),
+    /** Max tokens for temporal view in prompt */
+    temporalBudget: z.number().default(64_000),
+    /** Soft limit: run compaction synchronously before turn if exceeded */
+    compactionThreshold: z.number().default(80_000),
+    /** Target size after compaction */
+    compactionTarget: z.number().default(60_000),
+    /** Hard limit: refuse turn entirely if exceeded (emergency brake) */
+    compactionHardLimit: z.number().default(150_000),
+    /** Minimum recent messages to preserve (never summarized) */
+    recencyBufferMessages: z.number().default(10),
+    /** Temporal search sub-agent budget (Sonnet 1M beta) */
+    temporalQueryBudget: z.number().default(512_000),
+    /** LTM reflection sub-agent budget (Opus) */
+    ltmReflectBudget: z.number().default(180_000),
+    /** LTM consolidation worker budget (Sonnet 1M beta) */
+    ltmConsolidateBudget: z.number().default(512_000),
+  });
+
+  const TokenBudgetOverrideSchema = TokenBudgetSchema.partial();
+
+  const TokenBudgetOverridesSchema = z
+    .object({
+      providers: z.record(TokenBudgetOverrideSchema).optional(),
+      tiers: z.record(TokenBudgetOverrideSchema).optional(),
+    })
+    .default({});
+
+  export type TokenBudgets = z.infer<typeof TokenBudgetSchema>;
+  export type TokenBudgetOverrides = z.infer<typeof TokenBudgetOverridesSchema>;
+
+  const TokenBudgetEnvKeys = {
+    mainAgentContext: "MAIN_AGENT_CONTEXT",
+    temporalBudget: "TEMPORAL_BUDGET",
+    compactionThreshold: "COMPACTION_THRESHOLD",
+    compactionTarget: "COMPACTION_TARGET",
+    compactionHardLimit: "COMPACTION_HARD_LIMIT",
+    recencyBufferMessages: "RECENCY_BUFFER_MESSAGES",
+    temporalQueryBudget: "TEMPORAL_QUERY_BUDGET",
+    ltmReflectBudget: "LTM_REFLECT_BUDGET",
+    ltmConsolidateBudget: "LTM_CONSOLIDATE_BUDGET",
+  } as const;
+
+  const KnownProviders = [
+    "anthropic",
+    "openai",
+    "codex",
+    "openai-compatible",
+  ] as const;
+
+  function parseNumberEnv(value: string | undefined, envKey: string): number | undefined {
+    if (value === undefined) return undefined;
+    const parsed = Number(value);
+    if (Number.isNaN(parsed)) {
+      throw new Error(`Invalid numeric value for ${envKey}`);
+    }
+    return parsed;
+  }
+
+  function readTokenBudgetsFromEnv(prefix: string): Partial<TokenBudgets> {
+    const budgets: Partial<TokenBudgets> = {};
+    for (const [key, envSuffix] of Object.entries(TokenBudgetEnvKeys)) {
+      const envKey = `AGENT_TOKEN_BUDGET_${prefix}${envSuffix}`;
+      const value = parseNumberEnv(process.env[envKey], envKey);
+      if (value !== undefined) {
+        budgets[key as keyof TokenBudgets] = value;
+      }
+    }
+    return budgets;
+  }
+
+  function readProviderOverrides(): Record<string, Partial<TokenBudgets>> {
+    const overrides: Record<string, Partial<TokenBudgets>> = {};
+    for (const provider of KnownProviders) {
+      const envProvider = provider.toUpperCase().replace(/[^A-Z0-9]/g, "_");
+      const budgetOverride = readTokenBudgetsFromEnv(`PROVIDER_${envProvider}_`);
+      if (Object.keys(budgetOverride).length > 0) {
+        overrides[provider] = budgetOverride;
+      }
+    }
+    return overrides;
+  }
+
+  function readTierOverrides(): Record<ModelTier, Partial<TokenBudgets>> {
+    const tiers: ModelTier[] = ["reasoning", "workhorse", "fast"];
+    const overrides = {} as Record<ModelTier, Partial<TokenBudgets>>;
+    for (const tier of tiers) {
+      const envTier = tier.toUpperCase();
+      const budgetOverride = readTokenBudgetsFromEnv(`TIER_${envTier}_`);
+      if (Object.keys(budgetOverride).length > 0) {
+        overrides[tier] = budgetOverride;
+      }
+    }
+    return overrides;
+  }
+
   export const Schema = z.object({
     provider: z.string().default("anthropic"),
     providers: z
@@ -50,26 +148,8 @@ export namespace Config {
       fast: z.string().default("claude-haiku-4-5-20251001"),
     }),
     db: z.string().default("./agent.db"),
-    tokenBudgets: z.object({
-      /** Main agent context limit (Opus 200k, leave room for response) */
-      mainAgentContext: z.number().default(180_000),
-      /** Max tokens for temporal view in prompt */
-      temporalBudget: z.number().default(64_000),
-      /** Soft limit: run compaction synchronously before turn if exceeded */
-      compactionThreshold: z.number().default(80_000),
-      /** Target size after compaction */
-      compactionTarget: z.number().default(60_000),
-      /** Hard limit: refuse turn entirely if exceeded (emergency brake) */
-      compactionHardLimit: z.number().default(150_000),
-      /** Minimum recent messages to preserve (never summarized) */
-      recencyBufferMessages: z.number().default(10),
-      /** Temporal search sub-agent budget (Sonnet 1M beta) */
-      temporalQueryBudget: z.number().default(512_000),
-      /** LTM reflection sub-agent budget (Opus) */
-      ltmReflectBudget: z.number().default(180_000),
-      /** LTM consolidation worker budget (Sonnet 1M beta) */
-      ltmConsolidateBudget: z.number().default(512_000),
-    }),
+    tokenBudgets: TokenBudgetSchema,
+    tokenBudgetOverrides: TokenBudgetOverridesSchema,
   });
 
   export type Config = z.infer<typeof Schema>;
@@ -115,7 +195,11 @@ export namespace Config {
         },
       },
       db: process.env.AGENT_DB,
-      tokenBudgets: {},
+      tokenBudgets: readTokenBudgetsFromEnv(""),
+      tokenBudgetOverrides: {
+        providers: readProviderOverrides(),
+        tiers: readTierOverrides(),
+      },
     });
 
     return cached;
@@ -127,6 +211,31 @@ export namespace Config {
   export function resolveModelTier(tier: ModelTier): string {
     const config = get();
     return config.models[tier];
+  }
+
+  export function getTokenBudgets(options: {
+    provider?: string;
+    tier?: ModelTier;
+  } = {}): TokenBudgets {
+    const config = get();
+    const provider = options.provider ?? config.provider;
+    const tier = options.tier;
+    let budgets = { ...config.tokenBudgets };
+    const providerOverride = config.tokenBudgetOverrides.providers?.[provider];
+    if (providerOverride) {
+      budgets = { ...budgets, ...providerOverride };
+    }
+    if (tier) {
+      const tierOverride = config.tokenBudgetOverrides.tiers?.[tier];
+      if (tierOverride) {
+        budgets = { ...budgets, ...tierOverride };
+      }
+    }
+    return budgets;
+  }
+
+  export function getTokenBudgetsForTier(tier: ModelTier): TokenBudgets {
+    return getTokenBudgets({ tier });
   }
 
   /**

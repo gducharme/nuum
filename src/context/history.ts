@@ -19,8 +19,7 @@ import { buildTemporalView, reconstructHistoryAsTurns } from "../temporal"
  * and using summaries for older content.
  */
 export async function buildConversationHistory(storage: Storage): Promise<CoreMessage[]> {
-  const config = Config.get()
-  const temporalBudget = config.tokenBudgets.temporalBudget
+  const temporalBudget = Config.getTokenBudgetsForTier("reasoning").temporalBudget
 
   // Fetch messages and summaries for temporal view
   const allMessages = await storage.temporal.getMessages()

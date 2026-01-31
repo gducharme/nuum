@@ -273,8 +273,8 @@ export async function runCompaction(
     const allSummaries = await storage.temporal.getSummaries()
 
     // Get recency buffer from config - these messages are protected from summarization
-    const appConfig = Config.get()
-    const recencyBuffer = appConfig.tokenBudgets.recencyBufferMessages
+    const recencyBuffer =
+      Config.getTokenBudgetsForTier("reasoning").recencyBufferMessages
     const { validIds, recencyCutoffId } = collectValidIds(
       allMessages,
       allSummaries,
