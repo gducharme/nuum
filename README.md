@@ -233,33 +233,37 @@ Reflection searches the full conversation history (via FTS5 full-text search) an
 ## Configuration
 
 ```bash
-# Required (depends on provider)
+# Required
+AGENT_PROVIDER=anthropic|openai|codex|openai-compatible
+
+# Required (provider credentials)
 # - AGENT_PROVIDER=anthropic
 ANTHROPIC_API_KEY=your-key-here
 # - AGENT_PROVIDER=openai|codex|openai-compatible
 #   (use OPENAI_COMPATIBLE_API_KEY for openai-compatible hosts)
 OPENAI_API_KEY=sk-...
 
-# Optional (defaults shown)
-AGENT_PROVIDER=anthropic
-AGENT_MODEL_REASONING=claude-opus-4-5-20251101
-AGENT_MODEL_WORKHORSE=claude-sonnet-4-5-20250929
-AGENT_MODEL_FAST=claude-haiku-4-5-20251001
+# Required model IDs (set a provider-agnostic default)
+AGENT_MODEL_REASONING=your-reasoning-model
+AGENT_MODEL_WORKHORSE=your-workhorse-model
+AGENT_MODEL_FAST=your-fast-model
+
+# Optional
 AGENT_DB=./agent.db
 
 # Provider-specific overrides (optional)
 # OpenAI/Codex
 OPENAI_BASE_URL=https://api.openai.com/v1
-OPENAI_MODEL_REASONING=gpt-4o
-OPENAI_MODEL_WORKHORSE=gpt-4o-mini
-OPENAI_MODEL_FAST=gpt-4o-mini
+OPENAI_MODEL_REASONING=your-openai-reasoning-model
+OPENAI_MODEL_WORKHORSE=your-openai-workhorse-model
+OPENAI_MODEL_FAST=your-openai-fast-model
 
 # OpenAI-compatible hosts (local or third-party)
 OPENAI_COMPATIBLE_BASE_URL=http://localhost:8000/v1
 OPENAI_COMPATIBLE_API_KEY=sk-...
-OPENAI_COMPAT_MODEL_REASONING=local-reasoning
-OPENAI_COMPAT_MODEL_WORKHORSE=local-workhorse
-OPENAI_COMPAT_MODEL_FAST=local-fast
+OPENAI_COMPAT_MODEL_REASONING=your-compat-reasoning-model
+OPENAI_COMPAT_MODEL_WORKHORSE=your-compat-workhorse-model
+OPENAI_COMPAT_MODEL_FAST=your-compat-fast-model
 
 # Alias for base URL (applies if provider uses OpenAI-compatible configs)
 LLM_BASE_URL=http://localhost:8000/v1
