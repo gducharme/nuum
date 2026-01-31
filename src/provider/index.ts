@@ -197,9 +197,28 @@ export namespace Provider {
    */
   export function getModelIdForTier(tier: Config.ModelTier): string {
     const config = Config.get()
-    const modelId = config.models[tier]
+    const modelIds = getEffectiveModelIds(config)
+    const modelId = modelIds[tier]
     log.debug("resolved model ID for tier", { tier, modelId, provider: config.provider })
     return modelId
+  }
+
+  function getEffectiveModelIds(
+    config: Config.Config,
+  ): Record<Config.ModelTier, string> {
+    let providerModels: Partial<Record<Config.ModelTier, string>> = {}
+
+    if (config.provider === "openai" || config.provider === "codex") {
+      providerModels = config.providers.openai.models
+    } else if (config.provider === "openai-compatible") {
+      providerModels = config.providers.openaiCompatible.models
+    }
+
+    return {
+      reasoning: providerModels.reasoning ?? config.models.reasoning,
+      workhorse: providerModels.workhorse ?? config.models.workhorse,
+      fast: providerModels.fast ?? config.models.fast,
+    }
   }
 
   /**
