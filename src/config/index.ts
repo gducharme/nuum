@@ -35,6 +35,8 @@ export namespace Config {
     ltmConsolidateBudget: z.number().default(512_000),
     /** Fixed overhead for system prompt, tools, and formatting */
     contextOverheadTokens: z.number().default(40_000),
+    /** Max tokens for model responses (used by sub-agents) */
+    responseMaxTokens: z.number().default(4096),
   });
 
   const TokenBudgetOverrideSchema = TokenBudgetSchema.partial();
@@ -60,6 +62,7 @@ export namespace Config {
     ltmReflectBudget: "LTM_REFLECT_BUDGET",
     ltmConsolidateBudget: "LTM_CONSOLIDATE_BUDGET",
     contextOverheadTokens: "CONTEXT_OVERHEAD_TOKENS",
+    responseMaxTokens: "RESPONSE_MAX_TOKENS",
   } as const;
 
   const KnownProviders = [

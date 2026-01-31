@@ -15,7 +15,7 @@
 
 import type { CoreMessage, CoreTool } from "ai"
 import type { Storage } from "../storage"
-import type { Config } from "../config"
+import { Config } from "../config"
 import { Provider } from "../provider"
 import { Log } from "../util/log"
 import { buildAgentContext } from "../context"
@@ -48,7 +48,7 @@ export interface SubAgentConfig<TResult> {
   /** Max turns before giving up (default: 20) */
   maxTurns?: number
 
-  /** Max output tokens per turn (default: 4096) */
+  /** Max output tokens per turn (default: Config token budget) */
   maxTokens?: number
 
   /** Temperature (default: 0) */
@@ -97,7 +97,7 @@ export async function runSubAgent<TResult>(
     extractResult,
     tier = "workhorse",
     maxTurns = 20,
-    maxTokens = 4096,
+    maxTokens = Config.getTokenBudgetsForTier(tier).responseMaxTokens,
     temperature = 0,
     onToolResult,
   } = config

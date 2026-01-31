@@ -274,6 +274,7 @@ AGENT_TOKEN_BUDGET_RECENCY_BUFFER_MESSAGES=10
 AGENT_TOKEN_BUDGET_TEMPORAL_QUERY_BUDGET=512000
 AGENT_TOKEN_BUDGET_LTM_REFLECT_BUDGET=180000
 AGENT_TOKEN_BUDGET_LTM_CONSOLIDATE_BUDGET=512000
+AGENT_TOKEN_BUDGET_RESPONSE_MAX_TOKENS=4096
 
 # Provider-specific token budget overrides
 # (provider keys are uppercased, non-alphanumerics become underscores)
@@ -300,6 +301,7 @@ depend on model context windows, tool payload sizes, and how long your sessions 
   - `temporalQueryBudget`: 96k–120k
   - `ltmReflectBudget`: 96k–120k
   - `ltmConsolidateBudget`: 96k–120k
+  - `responseMaxTokens`: 2048–4096
 
 - **Open-source models (32k context)**:
   - `mainAgentContext`: 24k
@@ -310,6 +312,7 @@ depend on model context windows, tool payload sizes, and how long your sessions 
   - `temporalQueryBudget`: 24k–28k
   - `ltmReflectBudget`: 24k–28k
   - `ltmConsolidateBudget`: 24k–28k
+  - `responseMaxTokens`: 512–2048
 
 ---
 
