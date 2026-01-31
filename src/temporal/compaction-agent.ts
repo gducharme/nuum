@@ -301,6 +301,8 @@ export async function runCompaction(
       config.compactionTarget,
       recencyBuffer,
     )
+    const { distillationMaxTokens } =
+      Config.getTokenBudgetsForTier("workhorse")
 
     // Agent messages: refreshed history + compaction task
     const initialMessages: CoreMessage[] = [
@@ -317,7 +319,7 @@ export async function runCompaction(
         systemPrompt: ctx.systemPrompt,
         initialMessages,
         tools,
-        maxTokens: 4096,
+        maxTokens: distillationMaxTokens ?? 4096,
         temperature: 0,
         maxTurns: 5,
         isDone: stopOnTool("finish_distillation"),
