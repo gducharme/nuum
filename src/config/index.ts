@@ -33,6 +33,8 @@ export namespace Config {
     ltmReflectBudget: z.number().default(180_000),
     /** LTM consolidation worker budget (Sonnet 1M beta) */
     ltmConsolidateBudget: z.number().default(512_000),
+    /** Distillation sub-agent max output tokens */
+    distillationMaxTokens: z.number().default(4_096),
     /** Fixed overhead for system prompt, tools, and formatting */
     contextOverheadTokens: z.number().default(40_000),
   });
@@ -59,6 +61,7 @@ export namespace Config {
     temporalQueryBudget: "TEMPORAL_QUERY_BUDGET",
     ltmReflectBudget: "LTM_REFLECT_BUDGET",
     ltmConsolidateBudget: "LTM_CONSOLIDATE_BUDGET",
+    distillationMaxTokens: "DISTILLATION_MAX_TOKENS",
     contextOverheadTokens: "CONTEXT_OVERHEAD_TOKENS",
   } as const;
 
