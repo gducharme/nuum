@@ -16,6 +16,31 @@ export namespace Config {
 
   export const Schema = z.object({
     provider: z.string().default("anthropic"),
+    providers: z
+      .object({
+        openai: z.object({
+          apiKey: z.string().optional(),
+          baseUrl: z.string().optional(),
+          models: z.object({
+            reasoning: z.string().optional(),
+            workhorse: z.string().optional(),
+            fast: z.string().optional(),
+          }),
+        }),
+        openaiCompatible: z.object({
+          apiKey: z.string().optional(),
+          baseUrl: z.string().optional(),
+          models: z.object({
+            reasoning: z.string().optional(),
+            workhorse: z.string().optional(),
+            fast: z.string().optional(),
+          }),
+        }),
+      })
+      .default({
+        openai: { models: {} },
+        openaiCompatible: { models: {} },
+      }),
     models: z.object({
       /** Main agent, LTM reflection - best judgment (Opus 4.5, 200k context) */
       reasoning: z.string().default("claude-opus-4-5-20251101"),
@@ -64,6 +89,30 @@ export namespace Config {
         reasoning: process.env.AGENT_MODEL_REASONING,
         workhorse: process.env.AGENT_MODEL_WORKHORSE,
         fast: process.env.AGENT_MODEL_FAST,
+      },
+      providers: {
+        openai: {
+          apiKey: process.env.OPENAI_API_KEY,
+          baseUrl: process.env.OPENAI_BASE_URL ?? process.env.LLM_BASE_URL,
+          models: {
+            reasoning: process.env.OPENAI_MODEL_REASONING,
+            workhorse: process.env.OPENAI_MODEL_WORKHORSE,
+            fast: process.env.OPENAI_MODEL_FAST,
+          },
+        },
+        openaiCompatible: {
+          apiKey:
+            process.env.OPENAI_COMPATIBLE_API_KEY ?? process.env.OPENAI_API_KEY,
+          baseUrl:
+            process.env.OPENAI_COMPATIBLE_BASE_URL ??
+            process.env.OPENAI_BASE_URL ??
+            process.env.LLM_BASE_URL,
+          models: {
+            reasoning: process.env.OPENAI_COMPAT_MODEL_REASONING,
+            workhorse: process.env.OPENAI_COMPAT_MODEL_WORKHORSE,
+            fast: process.env.OPENAI_COMPAT_MODEL_FAST,
+          },
+        },
       },
       db: process.env.AGENT_DB,
       tokenBudgets: {},
