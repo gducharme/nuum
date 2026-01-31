@@ -48,7 +48,7 @@ export interface SubAgentConfig<TResult> {
   /** Max turns before giving up (default: 20) */
   maxTurns?: number
 
-  /** Max output tokens per turn (default: 4096) */
+  /** Max output tokens per turn (defaults to tier token budget, then 4096) */
   maxTokens?: number
 
   /** Temperature (default: 0) */
@@ -97,10 +97,13 @@ export async function runSubAgent<TResult>(
     extractResult,
     tier = "workhorse",
     maxTurns = 20,
-    maxTokens = 4096,
+    maxTokens,
     temperature = 0,
     onToolResult,
   } = config
+
+  const tokenBudgets = Config.getTokenBudgetsForTier(tier)
+  const resolvedMaxTokens = maxTokens ?? tokenBudgets.mainAgentContext ?? 4096
 
   log.info(`starting sub-agent: ${name}`, { maxTurns, tier })
 
@@ -122,7 +125,7 @@ export async function runSubAgent<TResult>(
     systemPrompt: ctx.systemPrompt,
     initialMessages,
     tools,
-    maxTokens,
+    maxTokens: resolvedMaxTokens,
     temperature,
     maxTurns,
     isDone: stopOnTool(finishToolName),
