@@ -25,6 +25,12 @@ import { Log } from "../util/log"
 export namespace Provider {
   const log = Log.create({ service: "provider" })
 
+  export interface ProviderCapabilities {
+    supportsSystemPromptCache: boolean
+    supportsMessageCacheMarkers: boolean
+    supportsCacheUsageMetadata: boolean
+  }
+
   type ProviderFactory = (modelId: string) => LanguageModel
   type ProviderCreator = (config: Config.Config) => ProviderFactory
 
@@ -33,6 +39,29 @@ export namespace Provider {
     openai: createOpenAIProvider,
     codex: createOpenAIProvider,
     "openai-compatible": createOpenAICompatibleProvider,
+  }
+
+  const providerCapabilities: Record<string, ProviderCapabilities> = {
+    anthropic: {
+      supportsSystemPromptCache: true,
+      supportsMessageCacheMarkers: true,
+      supportsCacheUsageMetadata: true,
+    },
+    openai: {
+      supportsSystemPromptCache: false,
+      supportsMessageCacheMarkers: false,
+      supportsCacheUsageMetadata: false,
+    },
+    codex: {
+      supportsSystemPromptCache: false,
+      supportsMessageCacheMarkers: false,
+      supportsCacheUsageMetadata: false,
+    },
+    "openai-compatible": {
+      supportsSystemPromptCache: false,
+      supportsMessageCacheMarkers: false,
+      supportsCacheUsageMetadata: false,
+    },
   }
 
   let cachedProvider: { key: string; provider: ProviderFactory } | null = null
@@ -132,6 +161,17 @@ export namespace Provider {
     const provider = createProvider(config)
     cachedProvider = { key: config.provider, provider }
     return provider
+  }
+
+  export function getCapabilities(): ProviderCapabilities {
+    const config = Config.get()
+    return (
+      providerCapabilities[config.provider] ?? {
+        supportsSystemPromptCache: false,
+        supportsMessageCacheMarkers: false,
+        supportsCacheUsageMetadata: false,
+      }
+    )
   }
 
   /**
@@ -257,13 +297,13 @@ Please check the tool's parameter schema and try again with correct arguments.`
     messages: CoreMessage[],
     system: string | undefined,
     cacheSystemPrompt: boolean,
-    providerKey: string,
+    supportsSystemPromptCache: boolean,
   ): { messages: CoreMessage[]; system: string | undefined } {
     if (!system) {
       return { messages, system: undefined }
     }
 
-    if (!cacheSystemPrompt || providerKey !== "anthropic") {
+    if (!cacheSystemPrompt || !supportsSystemPromptCache) {
       // No caching - use the standard system parameter
       return { messages, system }
     }
@@ -342,13 +382,14 @@ Please check the tool's parameter schema and try again with correct arguments.`
   export async function generate(options: GenerateOptions): Promise<GenerateTextResult<Record<string, CoreTool>, never>> {
     const config = Config.get()
     const providerKey = config.provider
+    const capabilities = getCapabilities()
     const cacheSystemPrompt =
-      providerKey === "anthropic" && (options.cacheSystemPrompt ?? false)
+      capabilities.supportsSystemPromptCache && (options.cacheSystemPrompt ?? false)
     const { messages, system } = prepareMessages(
       options.messages,
       options.system,
       cacheSystemPrompt,
-      providerKey,
+      capabilities.supportsSystemPromptCache,
     )
 
     log.debug("generate", {
@@ -379,13 +420,14 @@ Please check the tool's parameter schema and try again with correct arguments.`
   ): Promise<StreamTextResult<Record<string, CoreTool>, never>> {
     const config = Config.get()
     const providerKey = config.provider
+    const capabilities = getCapabilities()
     const cacheSystemPrompt =
-      providerKey === "anthropic" && (options.cacheSystemPrompt ?? false)
+      capabilities.supportsSystemPromptCache && (options.cacheSystemPrompt ?? false)
     const { messages, system } = prepareMessages(
       options.messages,
       options.system,
       cacheSystemPrompt,
-      providerKey,
+      capabilities.supportsSystemPromptCache,
     )
 
     log.debug("stream", {
