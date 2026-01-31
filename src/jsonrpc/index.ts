@@ -1,5 +1,5 @@
 /**
- * Claude Code SDK Protocol Server
+ * NDJSON Protocol Server
  *
  * Raw NDJSON over stdin/stdout. Process stays alive between turns.
  * Supports out-of-turn message delivery - messages received during a turn
@@ -120,7 +120,7 @@ export class Server {
 
     log.info("server started", { dbPath: this.options.dbPath, sessionId: this.sessionId })
 
-    // Emit init message (matches Claude SDK format)
+    // Emit init message (NDJSON protocol init)
     this.send(systemMessage("init", {
       session_id: this.sessionId,
       model: getModelId(),

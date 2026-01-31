@@ -6,8 +6,52 @@
 
 import type { Storage, PresentState } from "../storage"
 import type { CompactionResult } from "../temporal"
+import { Config } from "../config"
+import { Provider } from "../provider"
 
 const SEPARATOR = "─".repeat(70)
+const COST_ENV_INPUT = "AGENT_COST_INPUT_PER_MILLION"
+const COST_ENV_OUTPUT = "AGENT_COST_OUTPUT_PER_MILLION"
+
+interface CostRates {
+  inputPerMillion: number
+  outputPerMillion: number
+  source: string
+}
+
+function parseCostEnv(value: string | undefined): number | undefined {
+  if (!value) return undefined
+  const parsed = Number(value)
+  return Number.isFinite(parsed) ? parsed : undefined
+}
+
+function resolveCostRates(): CostRates | null {
+  const inputOverride = parseCostEnv(process.env[COST_ENV_INPUT])
+  const outputOverride = parseCostEnv(process.env[COST_ENV_OUTPUT])
+  if (inputOverride !== undefined && outputOverride !== undefined) {
+    return {
+      inputPerMillion: inputOverride,
+      outputPerMillion: outputOverride,
+      source: "custom",
+    }
+  }
+
+  const config = Config.get()
+  if (config.provider !== "anthropic") {
+    return null
+  }
+
+  const modelId = Provider.getModelIdForTier("reasoning")
+  if (modelId.includes("claude-opus-4-5")) {
+    return {
+      inputPerMillion: 15,
+      outputPerMillion: 75,
+      source: "claude-opus-4-5",
+    }
+  }
+
+  return null
+}
 
 function formatTimestamp(): string {
   return new Date().toISOString().slice(11, 23) // HH:MM:SS.mmm
@@ -192,13 +236,18 @@ export class VerboseOutput {
     const needsCompaction = stats.effectiveViewTokens > stats.compactionThreshold
     this.log(`  Effective view: ${stats.effectiveViewTokens.toLocaleString()} / ${stats.compactionThreshold.toLocaleString()} tokens${needsCompaction ? " (compaction needed)" : ""}`)
 
-    // Calculate cost estimate (Claude Opus 4.5 pricing: $15/$75 per 1M tokens)
-    const inputCost = (usage.inputTokens / 1_000_000) * 15
-    const outputCost = (usage.outputTokens / 1_000_000) * 75
-    const totalCost = inputCost + outputCost
-
-    this.log(`\nUsage: ${usage.inputTokens.toLocaleString()} input tokens, ${usage.outputTokens.toLocaleString()} output tokens`)
-    this.log(`Cost: $${totalCost.toFixed(4)} (input: $${inputCost.toFixed(4)}, output: $${outputCost.toFixed(4)})`)
+    const rates = resolveCostRates()
+    const usageLine = `\nUsage: ${usage.inputTokens.toLocaleString()} input tokens, ${usage.outputTokens.toLocaleString()} output tokens`
+    this.log(usageLine)
+    if (rates) {
+      const inputCost = (usage.inputTokens / 1_000_000) * rates.inputPerMillion
+      const outputCost = (usage.outputTokens / 1_000_000) * rates.outputPerMillion
+      const totalCost = inputCost + outputCost
+      const sourceLabel = rates.source === "custom" ? "custom rates" : rates.source
+      this.log(`Cost: $${totalCost.toFixed(4)} (input: $${inputCost.toFixed(4)}, output: $${outputCost.toFixed(4)}, ${sourceLabel})`)
+    } else {
+      this.log(`Cost: unavailable (set ${COST_ENV_INPUT} and ${COST_ENV_OUTPUT} to enable estimates)`)
+    }
   }
 
   error(message: string, error?: Error): void {

@@ -4,7 +4,7 @@
  *
  * Phase 1 deliverable: `miriad-code -p "prompt" --verbose`
  * Phase 2.1: `miriad-code --inspect` and `miriad-code --dump`
- * Phase 3a: `miriad-code --stdio` for JSON-RPC mode
+ * Phase 3a: `miriad-code --stdio` for NDJSON protocol mode
  */
 
 import { parseArgs } from "util"
@@ -81,7 +81,7 @@ Options:
   -p, --prompt <text>   The prompt to send to the agent
   -v, --verbose         Show memory state, token usage, and execution trace
       --repl            Start interactive REPL with readline support
-      --stdio           Start Claude Code SDK protocol server on stdin/stdout
+      --stdio           Start NDJSON protocol server on stdin/stdout
       --inspect         Show memory statistics: temporal, present, LTM
       --dump            Dump the full system prompt that would be sent to LLM
       --compact         Force run compaction to reduce effective view size
@@ -102,14 +102,12 @@ REPL Mode (--repl):
 
   Shortcuts: Ctrl+C (cancel), Ctrl+D (exit), Up/Down (history)
 
-JSON-RPC Mode (--stdio):
+NDJSON Protocol Mode (--stdio):
   Accepts NDJSON requests on stdin, streams responses on stdout.
 
-  Request: {"jsonrpc":"2.0","id":1,"method":"run","params":{"prompt":"..."}}
-  Response: {"jsonrpc":"2.0","id":1,"result":{"type":"text","chunk":"..."}}
-           {"jsonrpc":"2.0","id":1,"result":{"type":"complete","response":"..."}}
-
-  Methods: run, cancel, status
+  Request: {"type":"user","message":{"role":"user","content":"..."}}
+  Response: {"type":"assistant","message":{"role":"assistant","content":[{"type":"text","text":"..."}],"model":"..."}}
+           {"type":"result","subtype":"success","duration_ms":1234,"is_error":false,"num_turns":1,"session_id":"..."}
 
 Examples:
   miriad-code -p "What files are in src/"
@@ -152,7 +150,7 @@ async function main(): Promise<void> {
     return
   }
 
-  // Handle --stdio (JSON-RPC mode)
+  // Handle --stdio (NDJSON protocol mode)
   if (options.stdio) {
     try {
       await runServer({ dbPath: options.db })
