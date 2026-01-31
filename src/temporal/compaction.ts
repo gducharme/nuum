@@ -8,6 +8,7 @@
 
 import type { TemporalStorage } from "../storage"
 import type { WorkerStorage } from "../storage"
+import { Config } from "../config"
 import { buildTemporalView } from "./view"
 
 export interface CompactionConfig {
@@ -57,8 +58,6 @@ export async function shouldTriggerCompaction(
  * Without this, the estimate undercounts actual API tokens by ~40-50%,
  * causing compaction to trigger too late (e.g., estimate 103k = actual 160k).
  */
-export const FIXED_OVERHEAD_TOKENS = 40_000
-
 /**
  * Get the token count of the effective view (what actually goes to the agent).
  * Includes fixed overhead for system prompt, tools, and formatting.
@@ -67,7 +66,8 @@ export async function getEffectiveViewTokens(temporal: TemporalStorage): Promise
   const messages = await temporal.getMessages()
   const summaries = await temporal.getSummaries()
   const view = buildTemporalView({ budget: 0, messages, summaries })
-  return view.totalTokens + FIXED_OVERHEAD_TOKENS
+  const { contextOverheadTokens } = Config.getTokenBudgetsForTier("reasoning")
+  return view.totalTokens + contextOverheadTokens
 }
 
 /**
