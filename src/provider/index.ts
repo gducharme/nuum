@@ -116,7 +116,7 @@ export namespace Provider {
       process.env.LLM_BASE_URL
     return createOpenAI({
       apiKey,
-      ...(baseURL ? { baseURL } : {}),
+      baseURL,
     })
   }
 
