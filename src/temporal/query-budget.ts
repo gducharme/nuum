@@ -58,6 +58,23 @@ export function applyTokenBudgetToBlocks(
   }
 }
 
+export function capResultsToTokenBudget(
+  limit: number,
+  budget?: number,
+  tokensPerResult = 64,
+): number {
+  if (!Number.isFinite(budget)) {
+    return limit
+  }
+
+  if (budget <= 0 || tokensPerResult <= 0) {
+    return 0
+  }
+
+  const maxResults = Math.max(1, Math.floor(budget / tokensPerResult))
+  return Math.min(limit, maxResults)
+}
+
 export function applyTokenBudgetToContextBlocks(
   blocks: string[],
   targetIndex: number,

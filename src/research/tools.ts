@@ -17,6 +17,7 @@ import type { AgentType } from "../storage/ltm"
 import {
   applyTokenBudgetToBlocks,
   applyTokenBudgetToContextBlocks,
+  capResultsToTokenBudget,
 } from "../temporal/query-budget"
 import { activity } from "../util/activity-log"
 import {
@@ -64,6 +65,9 @@ export function buildResearchTools(
 } {
   const results = new Map<string, ResearchToolResult>()
   const { temporalQueryBudget } = Config.getTokenBudgetsForTier("workhorse")
+  const defaultSearchLimit = 20
+  const searchResultTokenEstimate = 64
+  const contextTokenEstimate = 256
 
   // Create LTM context for tool execution
   const createLTMContext = (toolCallId: string): Tool.Context & { extra: LTMToolContext } => {
@@ -213,7 +217,12 @@ export function buildResearchTools(
       limit: z.number().optional().describe("Maximum results to return (default: 20)"),
     }),
     execute: async ({ query, limit }, { toolCallId }) => {
-      const searchResults = await storage.temporal.searchFTS(query, limit ?? 20)
+      const effectiveLimit = capResultsToTokenBudget(
+        limit ?? defaultSearchLimit,
+        temporalQueryBudget,
+        searchResultTokenEstimate,
+      )
+      const searchResults = await storage.temporal.searchFTS(query, effectiveLimit)
 
       if (searchResults.length === 0) {
         const output = `No messages found matching "${query}"`
@@ -248,10 +257,20 @@ export function buildResearchTools(
       contextAfter: z.number().optional().describe("Number of messages to include after (default: 0)"),
     }),
     execute: async ({ id, contextBefore, contextAfter }, { toolCallId }) => {
+      const cappedContextBefore = capResultsToTokenBudget(
+        contextBefore ?? 0,
+        temporalQueryBudget,
+        contextTokenEstimate,
+      )
+      const cappedContextAfter = capResultsToTokenBudget(
+        contextAfter ?? 0,
+        temporalQueryBudget,
+        contextTokenEstimate,
+      )
       const messages = await storage.temporal.getMessageWithContext({
         id,
-        contextBefore: contextBefore ?? 0,
-        contextAfter: contextAfter ?? 0,
+        contextBefore: cappedContextBefore,
+        contextAfter: cappedContextAfter,
       })
 
       if (messages.length === 0) {
