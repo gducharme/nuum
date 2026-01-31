@@ -84,9 +84,9 @@ export async function runMemoryCuration(
     return { ran: false }
   }
 
-  const config = Config.get()
-  const threshold = options.compactionThreshold ?? config.tokenBudgets.compactionThreshold
-  const target = options.compactionTarget ?? config.tokenBudgets.compactionTarget
+  const tokenBudgets = Config.getTokenBudgetsForTier("reasoning")
+  const threshold = options.compactionThreshold ?? tokenBudgets.compactionThreshold
+  const target = options.compactionTarget ?? tokenBudgets.compactionTarget
 
   // Check if we should run (unless forced)
   if (!options.force) {

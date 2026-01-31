@@ -260,7 +260,53 @@ OPENAI_COMPAT_MODEL_FAST=local-fast
 
 # Alias for base URL (applies if provider uses OpenAI-compatible configs)
 LLM_BASE_URL=http://localhost:8000/v1
+
+# Token budget overrides (optional)
+AGENT_TOKEN_BUDGET_MAIN_AGENT_CONTEXT=180000
+AGENT_TOKEN_BUDGET_TEMPORAL_BUDGET=64000
+AGENT_TOKEN_BUDGET_COMPACTION_THRESHOLD=80000
+AGENT_TOKEN_BUDGET_COMPACTION_TARGET=60000
+AGENT_TOKEN_BUDGET_COMPACTION_HARD_LIMIT=150000
+AGENT_TOKEN_BUDGET_RECENCY_BUFFER_MESSAGES=10
+AGENT_TOKEN_BUDGET_TEMPORAL_QUERY_BUDGET=512000
+AGENT_TOKEN_BUDGET_LTM_REFLECT_BUDGET=180000
+AGENT_TOKEN_BUDGET_LTM_CONSOLIDATE_BUDGET=512000
+
+# Provider-specific token budget overrides
+# (provider keys are uppercased, non-alphanumerics become underscores)
+AGENT_TOKEN_BUDGET_PROVIDER_OPENAI_MAIN_AGENT_CONTEXT=120000
+AGENT_TOKEN_BUDGET_PROVIDER_OPENAI_COMPATIBLE_MAIN_AGENT_CONTEXT=60000
+
+# Tier-specific token budget overrides
+AGENT_TOKEN_BUDGET_TIER_REASONING_MAIN_AGENT_CONTEXT=180000
+AGENT_TOKEN_BUDGET_TIER_WORKHORSE_TEMPORAL_QUERY_BUDGET=128000
+AGENT_TOKEN_BUDGET_TIER_FAST_TEMPORAL_BUDGET=32000
 ```
+
+### Recommended token budgets
+
+Use these as starting points when tuning `AGENT_TOKEN_BUDGET_*`. Actual safe limits
+depend on model context windows, tool payload sizes, and how long your sessions run.
+
+- **OpenAI/Codex (128k context)**:
+  - `mainAgentContext`: 110k–120k
+  - `temporalBudget`: 32k–48k
+  - `compactionThreshold`: 60k–70k
+  - `compactionTarget`: 45k–55k
+  - `compactionHardLimit`: 110k–120k
+  - `temporalQueryBudget`: 96k–120k
+  - `ltmReflectBudget`: 96k–120k
+  - `ltmConsolidateBudget`: 96k–120k
+
+- **Open-source models (32k context)**:
+  - `mainAgentContext`: 24k
+  - `temporalBudget`: 8k–12k
+  - `compactionThreshold`: 18k–20k
+  - `compactionTarget`: 12k–14k
+  - `compactionHardLimit`: 28k–30k
+  - `temporalQueryBudget`: 24k–28k
+  - `ltmReflectBudget`: 24k–28k
+  - `ltmConsolidateBudget`: 24k–28k
 
 ---
 

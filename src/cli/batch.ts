@@ -33,7 +33,6 @@ async function getMemoryStats(storage: Storage): Promise<MemoryStats> {
   const messages = await storage.temporal.getMessages()
   const summaries = await storage.temporal.getSummaries()
   const effectiveViewTokens = await getEffectiveViewTokens(storage.temporal)
-  const config = Config.get()
 
   // Get LTM stats
   const ltmEntries = await storage.ltm.glob("/**")
@@ -79,6 +78,7 @@ async function getMemoryStats(storage: Storage): Promise<MemoryStats> {
 
   const totalSummaryTokens = summaries.reduce((sum, s) => sum + s.tokenEstimate, 0)
 
+  const { compactionThreshold } = Config.getTokenBudgetsForTier("reasoning")
   return {
     totalMessages: messages.length,
     totalSummaries: summaries.length,
@@ -86,7 +86,7 @@ async function getMemoryStats(storage: Storage): Promise<MemoryStats> {
     effectiveViewTokens,
     totalMessageTokens,
     totalSummaryTokens,
-    compactionThreshold: config.tokenBudgets.compactionThreshold,
+    compactionThreshold,
     ltmEntries: ltmEntries.length,
     identityTokens: identity ? estimateTokens(identity.body) : 0,
     behaviorTokens: behavior ? estimateTokens(behavior.body) : 0,
@@ -97,14 +97,14 @@ async function getMemoryStats(storage: Storage): Promise<MemoryStats> {
  * Calculate token budget for verbose output.
  */
 async function calculateTokenBudget(stats: MemoryStats, storage: Storage): Promise<TokenBudget> {
-  const config = Config.get()
-  const total = config.tokenBudgets.mainAgentContext
+  const tokenBudgets = Config.getTokenBudgetsForTier("reasoning")
+  const total = tokenBudgets.mainAgentContext
 
   // Build temporal view to get actual token usage breakdown
   const messages = await storage.temporal.getMessages()
   const summaries = await storage.temporal.getSummaries()
   const temporalView = buildTemporalView({
-    budget: config.tokenBudgets.temporalBudget,
+    budget: tokenBudgets.temporalBudget,
     messages,
     summaries,
   })

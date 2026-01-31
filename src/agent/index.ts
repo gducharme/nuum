@@ -629,9 +629,9 @@ export async function runAgent(
   await surfaceBackgroundReports(storage)
 
   // Pre-turn compaction gate: ensure we're not overflowing before starting
-  const config = Config.get()
-  const softLimit = config.tokenBudgets.compactionThreshold
-  const hardLimit = config.tokenBudgets.compactionHardLimit
+  const tokenBudgets = Config.getTokenBudgetsForTier("reasoning")
+  const softLimit = tokenBudgets.compactionThreshold
+  const hardLimit = tokenBudgets.compactionHardLimit
   const tokensBefore = await getEffectiveViewTokens(storage.temporal)
 
   if (tokensBefore > hardLimit) {
@@ -648,7 +648,7 @@ export async function runAgent(
     log.warn("approaching token limit, running compaction before turn", { 
       tokens: tokensBefore, 
       softLimit,
-      target: config.tokenBudgets.compactionTarget 
+      target: tokenBudgets.compactionTarget 
     })
     
     await runMemoryCuration(storage, { force: true })
