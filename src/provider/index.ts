@@ -1,11 +1,10 @@
 /**
- * AI Provider integration for miriad-code
- *
- * Phase 1: Anthropic-only via @ai-sdk/anthropic
- * Simplified from OpenCode's multi-provider system.
+ * Provider integration for miriad-code.
+ * Supports Anthropic, OpenAI/Codex, and OpenAI-compatible endpoints.
  */
 
 import { createAnthropic } from "@ai-sdk/anthropic"
+import { createOpenAI } from "@ai-sdk/openai"
 import {
   generateText,
   streamText,
@@ -26,16 +25,26 @@ import { Log } from "../util/log"
 export namespace Provider {
   const log = Log.create({ service: "provider" })
 
+  type ProviderFactory = (modelId: string) => LanguageModel
+  type ProviderCreator = (config: Config.Config) => ProviderFactory
+
+  const providerRegistry: Record<string, ProviderCreator> = {
+    anthropic: createAnthropicProvider,
+    openai: createOpenAIProvider,
+    codex: createOpenAIProvider,
+    "openai-compatible": createOpenAICompatibleProvider,
+  }
+
+  let cachedProvider: { key: string; provider: ProviderFactory } | null = null
+
   /**
-   * Get an Anthropic API key from environment.
-   * Throws if not found.
+   * Get a required API key from environment.
    */
-  function getApiKey(): string {
-    const key = process.env.ANTHROPIC_API_KEY
+  function getRequiredEnv(keyName: string, guidance: string): string {
+    const key = process.env[keyName]
     if (!key) {
       throw new Error(
-        "ANTHROPIC_API_KEY environment variable is required.\n" +
-          "Set it with: export ANTHROPIC_API_KEY=sk-...",
+        `${keyName} environment variable is required.\n${guidance}`,
       )
     }
     return key
@@ -44,9 +53,12 @@ export namespace Provider {
   /**
    * Create an Anthropic provider instance.
    */
-  function createProvider() {
+  function createAnthropicProvider(): ProviderFactory {
     return createAnthropic({
-      apiKey: getApiKey(),
+      apiKey: getRequiredEnv(
+        "ANTHROPIC_API_KEY",
+        "Set it with: export ANTHROPIC_API_KEY=sk-...",
+      ),
       headers: {
         // Enable Claude Code beta features
         // - claude-code: Claude Code specific features
@@ -58,11 +70,76 @@ export namespace Provider {
   }
 
   /**
+   * Create an OpenAI/Codex provider instance.
+   */
+  function createOpenAIProvider(): ProviderFactory {
+    return createOpenAI({
+      apiKey: getRequiredEnv(
+        "OPENAI_API_KEY",
+        "Set it with: export OPENAI_API_KEY=sk-...",
+      ),
+    })
+  }
+
+  /**
+   * Create an OpenAI-compatible provider instance (local or alternative hosts).
+   */
+  function createOpenAICompatibleProvider(): ProviderFactory {
+    const baseURL =
+      process.env.OPENAI_COMPATIBLE_BASE_URL ?? process.env.OPENAI_BASE_URL
+
+    if (!baseURL) {
+      throw new Error(
+        "OPENAI_COMPATIBLE_BASE_URL environment variable is required.\n" +
+          "Set it with: export OPENAI_COMPATIBLE_BASE_URL=http://localhost:8000/v1",
+      )
+    }
+
+    const apiKey =
+      process.env.OPENAI_COMPATIBLE_API_KEY ??
+      process.env.OPENAI_API_KEY ??
+      "no-key"
+
+    if (apiKey === "no-key") {
+      log.warn("openai-compatible provider missing API key; continuing without one")
+    }
+
+    return createOpenAI({
+      apiKey,
+      baseURL,
+    })
+  }
+
+  /**
+   * Create provider factory based on config.
+   */
+  function createProvider(config: Config.Config): ProviderFactory {
+    const providerCreator = providerRegistry[config.provider]
+    if (!providerCreator) {
+      const available = Object.keys(providerRegistry).sort().join(", ")
+      throw new Error(
+        `Unsupported provider "${config.provider}". Available providers: ${available}`,
+      )
+    }
+    return providerCreator(config)
+  }
+
+  function getProviderFactory(): ProviderFactory {
+    const config = Config.get()
+    if (cachedProvider?.key === config.provider) {
+      return cachedProvider.provider
+    }
+    const provider = createProvider(config)
+    cachedProvider = { key: config.provider, provider }
+    return provider
+  }
+
+  /**
    * Get a language model for a given model ID.
    */
   export function getModel(modelId: string): LanguageModel {
-    const anthropic = createProvider()
-    return anthropic(modelId)
+    const provider = getProviderFactory()
+    return provider(modelId)
   }
 
   /**
@@ -168,13 +245,14 @@ Please check the tool's parameter schema and try again with correct arguments.`
   function prepareMessages(
     messages: CoreMessage[],
     system: string | undefined,
-    cacheSystemPrompt: boolean
+    cacheSystemPrompt: boolean,
+    providerKey: string,
   ): { messages: CoreMessage[]; system: string | undefined } {
     if (!system) {
       return { messages, system: undefined }
     }
 
-    if (!cacheSystemPrompt) {
+    if (!cacheSystemPrompt || providerKey !== "anthropic") {
       // No caching - use the standard system parameter
       return { messages, system }
     }
@@ -251,17 +329,23 @@ Please check the tool's parameter schema and try again with correct arguments.`
    * Generate text without streaming.
    */
   export async function generate(options: GenerateOptions): Promise<GenerateTextResult<Record<string, CoreTool>, never>> {
+    const config = Config.get()
+    const providerKey = config.provider
+    const cacheSystemPrompt =
+      providerKey === "anthropic" && (options.cacheSystemPrompt ?? false)
     const { messages, system } = prepareMessages(
       options.messages,
       options.system,
-      options.cacheSystemPrompt ?? false
+      cacheSystemPrompt,
+      providerKey,
     )
 
     log.debug("generate", {
       model: options.model.modelId,
       messageCount: messages.length,
       hasTools: !!options.tools,
-      cacheSystemPrompt: options.cacheSystemPrompt ?? false,
+      provider: providerKey,
+      cacheSystemPrompt,
     })
 
     return generateText({
@@ -282,17 +366,23 @@ Please check the tool's parameter schema and try again with correct arguments.`
   export async function stream(
     options: GenerateOptions,
   ): Promise<StreamTextResult<Record<string, CoreTool>, never>> {
+    const config = Config.get()
+    const providerKey = config.provider
+    const cacheSystemPrompt =
+      providerKey === "anthropic" && (options.cacheSystemPrompt ?? false)
     const { messages, system } = prepareMessages(
       options.messages,
       options.system,
-      options.cacheSystemPrompt ?? false
+      cacheSystemPrompt,
+      providerKey,
     )
 
     log.debug("stream", {
       model: options.model.modelId,
       messageCount: messages.length,
       hasTools: !!options.tools,
-      cacheSystemPrompt: options.cacheSystemPrompt ?? false,
+      provider: providerKey,
+      cacheSystemPrompt,
     })
 
     return streamText({
