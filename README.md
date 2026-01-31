@@ -9,7 +9,27 @@ An AI coding agent with **"infinite memory"** — continuous context across sess
 ## Quick Start
 
 ```bash
+# Choose a provider and model IDs (examples below)
+export AGENT_PROVIDER=anthropic
 export ANTHROPIC_API_KEY=your-key-here
+export AGENT_MODEL_REASONING=claude-opus-4-5-20251101
+export AGENT_MODEL_WORKHORSE=claude-sonnet-4-5-20250929
+export AGENT_MODEL_FAST=claude-haiku-4-5-20251001
+
+# Or use OpenAI/Codex
+export AGENT_PROVIDER=openai
+export OPENAI_API_KEY=your-key-here
+export OPENAI_MODEL_REASONING=gpt-4o
+export OPENAI_MODEL_WORKHORSE=gpt-4o-mini
+export OPENAI_MODEL_FAST=gpt-4o-mini
+
+# Or point to an OpenAI-compatible / open-source host
+export AGENT_PROVIDER=openai-compatible
+export OPENAI_COMPATIBLE_BASE_URL=http://localhost:8000/v1
+export OPENAI_COMPATIBLE_API_KEY=your-key-here
+export OPENAI_COMPAT_MODEL_REASONING=local-reasoning
+export OPENAI_COMPAT_MODEL_WORKHORSE=local-workhorse
+export OPENAI_COMPAT_MODEL_FAST=local-fast
 
 # Install and run interactively
 bunx @sanity-labs/nuum --repl
