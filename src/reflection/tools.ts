@@ -12,7 +12,12 @@
 import { tool } from "ai"
 import type { CoreTool } from "ai"
 import { z } from "zod"
+import { Config } from "../config"
 import type { Storage } from "../storage"
+import {
+  applyTokenBudgetToBlocks,
+  applyTokenBudgetToContextBlocks,
+} from "../temporal/query-budget"
 import { activity } from "../util/activity-log"
 import {
   Tool,
@@ -36,6 +41,7 @@ export interface ReflectionToolContext {
  */
 function buildSearchMessagesTool(ctx: ReflectionToolContext): CoreTool {
   const { storage } = ctx
+  const { temporalQueryBudget } = Config.getTokenBudgetsForTier("workhorse")
 
   return tool({
     description:
@@ -56,12 +62,20 @@ function buildSearchMessagesTool(ctx: ReflectionToolContext): CoreTool {
         return `No messages found matching "${query}"`
       }
 
-      const formatted = results
-        .map((r) => `[${r.id}] (${r.type}) ${r.snippet}`)
-        .join("\n\n")
+      const rawBlocks = results.map((r) => `[${r.id}] (${r.type}) ${r.snippet}`)
+      const { blocks, truncated } = applyTokenBudgetToBlocks(
+        rawBlocks,
+        temporalQueryBudget,
+      )
+      const formatted = blocks.join("\n\n")
+      const totalMatches = results.length
+      const shownMatches = blocks.length
+      const budgetNote = truncated
+        ? ` (showing ${shownMatches} of ${totalMatches} due to temporal query budget)`
+        : ""
 
-      activity.reflection.toolResult("search_messages", `${results.length} matches`)
-      return `Found ${results.length} messages:\n\n${formatted}`
+      activity.reflection.toolResult("search_messages", `${shownMatches} matches`)
+      return `Found ${shownMatches} messages${budgetNote}:\n\n${formatted}`
     },
   })
 }
@@ -73,6 +87,7 @@ function buildSearchMessagesTool(ctx: ReflectionToolContext): CoreTool {
  */
 function buildGetMessageTool(ctx: ReflectionToolContext): CoreTool {
   const { storage } = ctx
+  const { temporalQueryBudget } = Config.getTokenBudgetsForTier("workhorse")
 
   return tool({
     description:
@@ -101,14 +116,19 @@ function buildGetMessageTool(ctx: ReflectionToolContext): CoreTool {
         return `Message not found: ${id}`
       }
 
-      const formatted = messages
-        .map((m) => {
-          const marker = m.id === id ? ">>> " : "    "
-          return `${marker}[${m.id}] (${m.type})\n${marker}${m.content}`
-        })
-        .join("\n\n")
+      const rawBlocks = messages.map((m) => {
+        const marker = m.id === id ? ">>> " : "    "
+        return `${marker}[${m.id}] (${m.type})\n${marker}${m.content}`
+      })
+      const targetIndex = messages.findIndex((m) => m.id === id)
+      const { blocks } = applyTokenBudgetToContextBlocks(
+        rawBlocks,
+        targetIndex,
+        temporalQueryBudget,
+      )
+      const formatted = blocks.join("\n\n")
 
-      activity.reflection.toolResult("get_message", `${messages.length} messages`)
+      activity.reflection.toolResult("get_message", `${blocks.length} messages`)
       return formatted
     },
   })
