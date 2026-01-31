@@ -133,7 +133,8 @@ export namespace Provider {
 
     if (!baseURL) {
       throw new Error(
-        "OPENAI_COMPATIBLE_BASE_URL environment variable is required.\n" +
+        "OpenAI-compatible base URL is required via providers.openaiCompatible.baseUrl or " +
+          "OPENAI_COMPATIBLE_BASE_URL/OPENAI_BASE_URL/LLM_BASE_URL.\n" +
           "Set it with: export OPENAI_COMPATIBLE_BASE_URL=http://localhost:8000/v1",
       )
     }
