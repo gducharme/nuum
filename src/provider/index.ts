@@ -101,21 +101,35 @@ export namespace Provider {
   /**
    * Create an OpenAI/Codex provider instance.
    */
-  function createOpenAIProvider(): ProviderFactory {
+  function createOpenAIProvider(config: Config.Config): ProviderFactory {
+    const providerConfig = config.providers.openai
+    const apiKey = providerConfig.apiKey ?? process.env.OPENAI_API_KEY
+    if (!apiKey) {
+      throw new Error(
+        "OPENAI_API_KEY environment variable is required.\n" +
+          "Set it with: export OPENAI_API_KEY=sk-...",
+      )
+    }
+    const baseURL =
+      providerConfig.baseUrl ??
+      process.env.OPENAI_BASE_URL ??
+      process.env.LLM_BASE_URL
     return createOpenAI({
-      apiKey: getRequiredEnv(
-        "OPENAI_API_KEY",
-        "Set it with: export OPENAI_API_KEY=sk-...",
-      ),
+      apiKey,
+      ...(baseURL ? { baseURL } : {}),
     })
   }
 
   /**
    * Create an OpenAI-compatible provider instance (local or alternative hosts).
    */
-  function createOpenAICompatibleProvider(): ProviderFactory {
+  function createOpenAICompatibleProvider(config: Config.Config): ProviderFactory {
+    const providerConfig = config.providers.openaiCompatible
     const baseURL =
-      process.env.OPENAI_COMPATIBLE_BASE_URL ?? process.env.OPENAI_BASE_URL
+      providerConfig.baseUrl ??
+      process.env.OPENAI_COMPATIBLE_BASE_URL ??
+      process.env.OPENAI_BASE_URL ??
+      process.env.LLM_BASE_URL
 
     if (!baseURL) {
       throw new Error(
@@ -125,6 +139,7 @@ export namespace Provider {
     }
 
     const apiKey =
+      providerConfig.apiKey ??
       process.env.OPENAI_COMPATIBLE_API_KEY ??
       process.env.OPENAI_API_KEY ??
       "no-key"
