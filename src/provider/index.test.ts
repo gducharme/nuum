@@ -1,6 +1,7 @@
 import { describe, test, expect } from "bun:test"
 import { z } from "zod"
 import { tool } from "ai"
+import { Provider } from "./index"
 
 /**
  * Tests for the tool error handling mechanisms in Provider.
@@ -285,5 +286,30 @@ describe("prepareTools", () => {
     expect(result).toContain("Error executing tool")
     expect(result).toContain("failingTool")
     expect(result).toContain("Something went wrong")
+  })
+})
+
+describe("isContextLengthExceeded", () => {
+  test("detects common OpenAI context length errors", () => {
+    const error = new Error(
+      "This model's maximum context length is 8192 tokens, however you requested 10000 tokens.",
+    )
+
+    expect(Provider.isContextLengthExceeded(error)).toBe(true)
+  })
+
+  test("detects provider error codes", () => {
+    const error = {
+      code: "context_length_exceeded",
+      message: "Context length exceeded",
+    }
+
+    expect(Provider.isContextLengthExceeded(error)).toBe(true)
+  })
+
+  test("returns false for unrelated errors", () => {
+    const error = new Error("Network timeout")
+
+    expect(Provider.isContextLengthExceeded(error)).toBe(false)
   })
 })

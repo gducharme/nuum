@@ -334,9 +334,9 @@ export async function runCompaction(
         },
       })
     } catch (error) {
-      // Check if this is a "prompt is too long" error and we haven't already fallen back
       const errorMessage = error instanceof Error ? error.message : String(error)
-      if (errorMessage.includes("prompt is too long") && !usingFallbackModel) {
+      // Check if this is a context length error and we haven't already fallen back
+      if (Provider.isContextLengthExceeded(error) && !usingFallbackModel) {
         activity.distillation.warn(
           "Prompt too long for Opus, falling back to Sonnet (1M context)",
         )

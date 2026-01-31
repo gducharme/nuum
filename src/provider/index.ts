@@ -191,6 +191,61 @@ export namespace Provider {
   }
 
   /**
+   * Detect provider-agnostic context length exceeded errors.
+   */
+  export function isContextLengthExceeded(error: unknown): boolean {
+    if (!error) return false
+
+    const extractStrings = (value: unknown): string[] => {
+      if (!value) return []
+      if (typeof value === "string") return [value]
+      if (value instanceof Error) {
+        return [value.name, value.message, String((value as Error).cause ?? "")]
+      }
+      if (typeof value === "object") {
+        const record = value as Record<string, unknown>
+        const nested = record.error as Record<string, unknown> | undefined
+        return [
+          record.name,
+          record.message,
+          record.code,
+          record.type,
+          record.status,
+          nested?.name,
+          nested?.message,
+          nested?.code,
+          nested?.type,
+        ]
+          .filter((entry) => typeof entry === "string" || typeof entry === "number")
+          .map((entry) => String(entry))
+      }
+      return [String(value)]
+    }
+
+    const haystack = extractStrings(error)
+      .flatMap((entry) => entry.split(/\s+/))
+      .join(" ")
+      .toLowerCase()
+
+    const patterns = [
+      "context_length_exceeded",
+      "context length exceeded",
+      "maximum context length",
+      "max context length",
+      "context window",
+      "prompt is too long",
+      "input is too long",
+      "input too long",
+      "too many tokens",
+      "token limit exceeded",
+      "exceeds the context length",
+      "exceeds maximum context",
+    ]
+
+    return patterns.some((pattern) => haystack.includes(pattern))
+  }
+
+  /**
    * Get a language model for a given model ID.
    */
   export function getModel(modelId: string): LanguageModel {
