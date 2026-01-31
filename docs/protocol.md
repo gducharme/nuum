@@ -61,15 +61,15 @@ Sent once on startup:
 
 ### Assistant Message
 
-The agent's response, possibly with tool calls:
+The agent's response, possibly with tool calls. The `model` field reflects the configured provider or alias (for example, a hosted model ID or a local runtime name), not Claude-specific naming.
 
 ```json
-{"type":"assistant","message":{"role":"assistant","content":[{"type":"text","text":"I'll help you with that."}],"model":"claude-sonnet-4-5-20250929"},"session_id":"nuum_01JD..."}
+{"type":"assistant","message":{"role":"assistant","content":[{"type":"text","text":"I'll help you with that."}],"model":"gpt-4o"},"session_id":"nuum_01JD..."}
 ```
 
 With tool use:
 ```json
-{"type":"assistant","message":{"role":"assistant","content":[{"type":"tool_use","id":"call_123","name":"read","input":{"filePath":"/tmp/test.txt"}}],"model":"claude-sonnet-4-5-20250929"},"session_id":"nuum_01JD..."}
+{"type":"assistant","message":{"role":"assistant","content":[{"type":"tool_use","id":"call_123","name":"read","input":{"filePath":"/tmp/test.txt"}}],"model":"local-reasoning"},"session_id":"nuum_01JD..."}
 ```
 
 ### Tool Result
@@ -122,9 +122,9 @@ Messages sent while a turn is running are queued and injected at the next opport
 
 ```
 → {"type":"user","message":{"role":"user","content":"Read /tmp/test.txt"}}
-← {"type":"assistant","message":{"role":"assistant","content":[{"type":"text","text":"I'll read that file."},{"type":"tool_use","id":"call_1","name":"read","input":{"filePath":"/tmp/test.txt"}}],"model":"claude-sonnet-4-5-20250929"},"session_id":"nuum_01JD..."}
+← {"type":"assistant","message":{"role":"assistant","content":[{"type":"text","text":"I'll read that file."},{"type":"tool_use","id":"call_1","name":"read","input":{"filePath":"/tmp/test.txt"}}],"model":"gpt-4o"},"session_id":"nuum_01JD..."}
 ← {"type":"system","subtype":"tool_result","tool_result":{"type":"tool_result","tool_use_id":"call_1","content":"Hello world!"}}
-← {"type":"assistant","message":{"role":"assistant","content":[{"type":"text","text":"The file contains: Hello world!"}],"model":"claude-sonnet-4-5-20250929"},"session_id":"nuum_01JD..."}
+← {"type":"assistant","message":{"role":"assistant","content":[{"type":"text","text":"The file contains: Hello world!"}],"model":"local-reasoning"},"session_id":"nuum_01JD..."}
 ← {"type":"result","subtype":"success","duration_ms":2500,"is_error":false,"num_turns":1,"session_id":"nuum_01JD...","result":"The file contains: Hello world!"}
 ```
 

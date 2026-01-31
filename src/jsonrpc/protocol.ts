@@ -1,8 +1,8 @@
 /**
- * Claude Code SDK Protocol
+ * Nuum SDK Protocol
  *
  * Raw NDJSON over stdin/stdout - no JSON-RPC envelope.
- * See docs/claude-code-protocol.md for the specification.
+ * See docs/protocol.md for the specification.
  */
 
 import { z } from "zod"
