@@ -237,10 +237,29 @@ Reflection searches the full conversation history (via FTS5 full-text search) an
 ANTHROPIC_API_KEY=your-key-here
 
 # Optional (defaults shown)
+AGENT_PROVIDER=anthropic
 AGENT_MODEL_REASONING=claude-opus-4-5-20251101
 AGENT_MODEL_WORKHORSE=claude-sonnet-4-5-20250929
 AGENT_MODEL_FAST=claude-haiku-4-5-20251001
 AGENT_DB=./agent.db
+
+# Provider-specific overrides (optional)
+# OpenAI/Codex
+OPENAI_API_KEY=sk-...
+OPENAI_BASE_URL=https://api.openai.com/v1
+OPENAI_MODEL_REASONING=gpt-4o
+OPENAI_MODEL_WORKHORSE=gpt-4o-mini
+OPENAI_MODEL_FAST=gpt-4o-mini
+
+# OpenAI-compatible hosts (local or third-party)
+OPENAI_COMPATIBLE_BASE_URL=http://localhost:8000/v1
+OPENAI_COMPATIBLE_API_KEY=sk-...
+OPENAI_COMPAT_MODEL_REASONING=local-reasoning
+OPENAI_COMPAT_MODEL_WORKHORSE=local-workhorse
+OPENAI_COMPAT_MODEL_FAST=local-fast
+
+# Alias for base URL (applies if provider uses OpenAI-compatible configs)
+LLM_BASE_URL=http://localhost:8000/v1
 ```
 
 ---
