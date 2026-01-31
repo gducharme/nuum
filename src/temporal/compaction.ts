@@ -48,7 +48,7 @@ export async function shouldTriggerCompaction(
 }
 
 /**
- * Fixed token overhead for context that isn't tracked in temporal storage.
+ * Token overhead for context that isn't tracked in temporal storage.
  * This accounts for:
  * - System prompt (~1-2k tokens)
  * - Tool definitions (~3-5k tokens for 10+ tools)
@@ -58,6 +58,10 @@ export async function shouldTriggerCompaction(
  * Without this, the estimate undercounts actual API tokens by ~40-50%,
  * causing compaction to trigger too late (e.g., estimate 103k = actual 160k).
  */
+export function getContextOverheadTokens(): number {
+  return Config.getTokenBudgetsForTier("reasoning").contextOverheadTokens
+}
+
 /**
  * Get the token count of the effective view (what actually goes to the agent).
  * Includes fixed overhead for system prompt, tools, and formatting.
@@ -66,8 +70,7 @@ export async function getEffectiveViewTokens(temporal: TemporalStorage): Promise
   const messages = await temporal.getMessages()
   const summaries = await temporal.getSummaries()
   const view = buildTemporalView({ budget: 0, messages, summaries })
-  const { contextOverheadTokens } = Config.getTokenBudgetsForTier("reasoning")
-  return view.totalTokens + contextOverheadTokens
+  return view.totalTokens + getContextOverheadTokens()
 }
 
 /**

@@ -11,7 +11,7 @@ import {
   shouldCreateOrder2Summary,
   shouldCreateHigherOrderSummary,
   COMPRESSION_TARGETS,
-  FIXED_OVERHEAD_TOKENS,
+  getContextOverheadTokens,
   type CompactionConfig,
 } from "./compaction"
 import { createInMemoryStorage, type Storage } from "../storage"
@@ -19,10 +19,10 @@ import { Identifier } from "../id"
 
 describe("shouldTriggerCompaction", () => {
   let storage: Storage
-  // Thresholds account for FIXED_OVERHEAD_TOKENS added by getEffectiveViewTokens
+  // Thresholds account for overhead added by getEffectiveViewTokens
   const config: CompactionConfig = {
-    compactionThreshold: FIXED_OVERHEAD_TOKENS + 1000,
-    compactionTarget: FIXED_OVERHEAD_TOKENS + 500,
+    compactionThreshold: getContextOverheadTokens() + 1000,
+    compactionTarget: getContextOverheadTokens() + 500,
   }
 
   beforeEach(() => {
@@ -169,10 +169,10 @@ describe("getCompactionState", () => {
 
 describe("calculateCompactionTarget", () => {
   let storage: Storage
-  // Thresholds account for FIXED_OVERHEAD_TOKENS added by getEffectiveViewTokens
+  // Thresholds account for overhead added by getEffectiveViewTokens
   const config: CompactionConfig = {
-    compactionThreshold: FIXED_OVERHEAD_TOKENS + 1000,
-    compactionTarget: FIXED_OVERHEAD_TOKENS + 500,
+    compactionThreshold: getContextOverheadTokens() + 1000,
+    compactionTarget: getContextOverheadTokens() + 500,
   }
 
   beforeEach(() => {
