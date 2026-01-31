@@ -76,7 +76,7 @@ export async function runReflection(
   // Build tools
   const { tools, getAnswer } = buildReflectionTools({ storage })
   const tokenBudgets = Config.getTokenBudgetsForTier("workhorse")
-  const maxTokens = tokenBudgets.ltmReflectBudget ?? 4096
+  const maxTokens = tokenBudgets?.ltmReflectBudget ?? 4096
 
   // Run sub-agent
   const result: SubAgentResult<string | null> = await runSubAgent(storage, {

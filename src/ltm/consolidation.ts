@@ -260,7 +260,7 @@ export async function runConsolidation(
   // Build tools with result tracking
   const { tools, getLastResult } = buildConsolidationTools(storage)
   const tokenBudgets = Config.getTokenBudgetsForTier("workhorse")
-  const maxTokens = tokenBudgets.ltmConsolidateBudget ?? 2048
+  const maxTokens = tokenBudgets?.ltmConsolidateBudget ?? 2048
 
   // Run sub-agent
   const subAgentResult = await runSubAgent(storage, {
