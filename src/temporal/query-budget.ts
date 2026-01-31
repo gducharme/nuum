@@ -21,6 +21,25 @@ function truncateToTokenBudget(text: string, budget: number): string {
   return `${text.slice(0, maxChars - 1)}…`
 }
 
+export function applyTokenBudgetToString(
+  text: string,
+  budget?: number,
+): { text: string; truncated: boolean } {
+  if (!Number.isFinite(budget)) {
+    return { text, truncated: false }
+  }
+
+  if (budget <= 0) {
+    return { text: "", truncated: text.length > 0 }
+  }
+
+  if (estimateTokens(text) > budget) {
+    return { text: truncateToTokenBudget(text, budget), truncated: true }
+  }
+
+  return { text, truncated: false }
+}
+
 export function applyTokenBudgetToBlocks(
   blocks: string[],
   budget?: number,
