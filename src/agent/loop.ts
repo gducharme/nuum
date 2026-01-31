@@ -43,8 +43,9 @@ const log = Log.create({ service: "agent-loop" })
  * The cache is prefix-based, so each breakpoint caches everything
  * up to and including that message.
  */
-function addCacheMarkers(messages: CoreMessage[]): CoreMessage[] {
+function addCacheMarkers(messages: CoreMessage[], supportsMessageCacheMarkers: boolean): CoreMessage[] {
   if (messages.length === 0) return messages
+  if (!supportsMessageCacheMarkers) return messages
   
   // Create a copy to avoid mutating the original
   const result = [...messages]
@@ -56,8 +57,8 @@ function addCacheMarkers(messages: CoreMessage[]): CoreMessage[] {
     result[i] = {
       ...result[i],
       providerOptions: {
-        anthropic: { cacheControl: { type: "ephemeral" } }
-      }
+        anthropic: { cacheControl: { type: "ephemeral" } },
+      },
     } as CoreMessage
   }
   
@@ -211,7 +212,11 @@ export async function runAgentLoop(options: AgentLoopOptions): Promise<AgentLoop
     // Add cache markers for Anthropic prompt caching
     // Mark the second-to-last message as a cache breakpoint
     // Combined with system prompt caching, this caches the stable context
-    const messagesWithCache = addCacheMarkers(messages)
+    const capabilities = Provider.getCapabilities()
+    const messagesWithCache = addCacheMarkers(
+      messages,
+      capabilities.supportsMessageCacheMarkers,
+    )
 
     const response = await Provider.generate({
       model,
@@ -230,10 +235,12 @@ export async function runAgentLoop(options: AgentLoopOptions): Promise<AgentLoop
     // Note: Anthropic's input_tokens (promptTokens) only counts tokens AFTER the last
     // cache breakpoint. It does NOT include cached tokens. So:
     //   total = cacheRead + cacheWrite + promptTokens
-    const anthropicMeta = response.providerMetadata?.anthropic as {
-      cacheCreationInputTokens?: number
-      cacheReadInputTokens?: number
-    } | undefined
+    const anthropicMeta = capabilities.supportsCacheUsageMetadata
+      ? (response.providerMetadata?.anthropic as {
+          cacheCreationInputTokens?: number
+          cacheReadInputTokens?: number
+        } | undefined)
+      : undefined
     
     if (anthropicMeta) {
       const cacheWrite = anthropicMeta.cacheCreationInputTokens ?? 0
