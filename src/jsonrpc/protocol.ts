@@ -1,7 +1,7 @@
 /**
- * Nuum SDK Protocol
+ * NDJSON Execution Protocol
  *
- * Raw NDJSON over stdin/stdout - no JSON-RPC envelope.
+ * Raw NDJSON over stdin/stdout with no JSON-RPC envelope.
  * See docs/protocol.md for the specification.
  */
 
