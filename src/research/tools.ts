@@ -11,8 +11,13 @@
 import { tool } from "ai"
 import type { CoreTool } from "ai"
 import { z } from "zod"
+import { Config } from "../config"
 import type { Storage } from "../storage"
 import type { AgentType } from "../storage/ltm"
+import {
+  applyTokenBudgetToBlocks,
+  applyTokenBudgetToContextBlocks,
+} from "../temporal/query-budget"
 import { activity } from "../util/activity-log"
 import {
   Tool,
@@ -58,6 +63,7 @@ export function buildResearchTools(
   getLastResult: (toolCallId: string) => ResearchToolResult | undefined
 } {
   const results = new Map<string, ResearchToolResult>()
+  const { temporalQueryBudget } = Config.getTokenBudgetsForTier("workhorse")
 
   // Create LTM context for tool execution
   const createLTMContext = (toolCallId: string): Tool.Context & { extra: LTMToolContext } => {
@@ -215,11 +221,19 @@ export function buildResearchTools(
         return output
       }
 
-      const formatted = searchResults
-        .map((r) => `[${r.id}] (${r.type}) ${r.snippet}`)
-        .join("\n\n")
+      const rawBlocks = searchResults.map((r) => `[${r.id}] (${r.type}) ${r.snippet}`)
+      const { blocks, truncated } = applyTokenBudgetToBlocks(
+        rawBlocks,
+        temporalQueryBudget,
+      )
+      const formatted = blocks.join("\n\n")
+      const totalMatches = searchResults.length
+      const shownMatches = blocks.length
+      const budgetNote = truncated
+        ? ` (showing ${shownMatches} of ${totalMatches} due to temporal query budget)`
+        : ""
 
-      const output = `Found ${searchResults.length} messages:\n\n${formatted}`
+      const output = `Found ${shownMatches} messages${budgetNote}:\n\n${formatted}`
       results.set(toolCallId, { output, done: false })
       return output
     },
@@ -246,12 +260,17 @@ export function buildResearchTools(
         return output
       }
 
-      const formatted = messages
-        .map((m) => {
-          const marker = m.id === id ? ">>> " : "    "
-          return `${marker}[${m.id}] (${m.type})\n${marker}${m.content}`
-        })
-        .join("\n\n")
+      const rawBlocks = messages.map((m) => {
+        const marker = m.id === id ? ">>> " : "    "
+        return `${marker}[${m.id}] (${m.type})\n${marker}${m.content}`
+      })
+      const targetIndex = messages.findIndex((m) => m.id === id)
+      const { blocks } = applyTokenBudgetToContextBlocks(
+        rawBlocks,
+        targetIndex,
+        temporalQueryBudget,
+      )
+      const formatted = blocks.join("\n\n")
 
       results.set(toolCallId, { output: formatted, done: false })
       return formatted
