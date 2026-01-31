@@ -271,6 +271,13 @@ export namespace Provider {
     assertProviderModelIdConfigured(config, tier)
     const modelIds = getEffectiveModelIds(config)
     const modelId = modelIds[tier]
+    if (!modelId) {
+      const envTier = tier.toUpperCase()
+      throw new Error(
+        `Missing model ID for "${tier}" tier with provider "${config.provider}". ` +
+          `Set AGENT_MODEL_${envTier} (or models.${tier}) and/or provider-specific model IDs.`,
+      )
+    }
     log.debug("resolved model ID for tier", { tier, modelId, provider: config.provider })
     return modelId
   }
@@ -280,23 +287,38 @@ export namespace Provider {
     tier: Config.ModelTier,
   ): void {
     if (config.provider === "openai" || config.provider === "codex") {
-      const modelId = config.providers.openai.models[tier]
-      if (!modelId) {
+      const providerModelId = config.providers.openai.models[tier]
+      const fallbackModelId = config.models[tier]
+      if (!providerModelId && !fallbackModelId) {
         const envVar = `OPENAI_MODEL_${tier.toUpperCase()}`
         throw new Error(
           `Missing OpenAI model ID for "${tier}" tier. ` +
-            `Set ${envVar} (or providers.openai.models.${tier}) when AGENT_PROVIDER is "${config.provider}".`,
+            `Set ${envVar} (or providers.openai.models.${tier}) ` +
+            `or AGENT_MODEL_${tier.toUpperCase()} (or models.${tier}) when AGENT_PROVIDER is "${config.provider}".`,
         )
       }
     }
 
     if (config.provider === "openai-compatible") {
-      const modelId = config.providers.openaiCompatible.models[tier]
-      if (!modelId) {
+      const providerModelId = config.providers.openaiCompatible.models[tier]
+      const fallbackModelId = config.models[tier]
+      if (!providerModelId && !fallbackModelId) {
         const envVar = `OPENAI_COMPAT_MODEL_${tier.toUpperCase()}`
         throw new Error(
           `Missing OpenAI-compatible model ID for "${tier}" tier. ` +
-            `Set ${envVar} (or providers.openaiCompatible.models.${tier}) when AGENT_PROVIDER is "openai-compatible".`,
+            `Set ${envVar} (or providers.openaiCompatible.models.${tier}) ` +
+            `or AGENT_MODEL_${tier.toUpperCase()} (or models.${tier}) when AGENT_PROVIDER is "openai-compatible".`,
+        )
+      }
+    }
+
+    if (config.provider === "anthropic") {
+      const modelId = config.models[tier]
+      if (!modelId) {
+        const envVar = `AGENT_MODEL_${tier.toUpperCase()}`
+        throw new Error(
+          `Missing Anthropic model ID for "${tier}" tier. ` +
+            `Set ${envVar} (or models.${tier}) when AGENT_PROVIDER is "anthropic".`,
         )
       }
     }
@@ -304,7 +326,7 @@ export namespace Provider {
 
   function getEffectiveModelIds(
     config: Config.Config,
-  ): Record<Config.ModelTier, string> {
+  ): Record<Config.ModelTier, string | undefined> {
     let providerModels: Partial<Record<Config.ModelTier, string>> = {}
 
     if (config.provider === "openai" || config.provider === "codex") {

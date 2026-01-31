@@ -2,7 +2,7 @@
  * Configuration for miriad-code
  *
  * Phase 1: Simple env-based config with sensible defaults.
- * Only ANTHROPIC_API_KEY is required.
+ * Provider selection and model IDs are required.
  */
 
 import { z } from "zod";
@@ -119,7 +119,7 @@ export namespace Config {
   }
 
   export const Schema = z.object({
-    provider: z.string().default("anthropic"),
+    provider: z.string(),
     providers: z
       .object({
         openai: z.object({
@@ -146,12 +146,12 @@ export namespace Config {
         openaiCompatible: { models: {} },
       }),
     models: z.object({
-      /** Main agent, LTM reflection - best judgment (Opus 4.5, 200k context) */
-      reasoning: z.string().default("claude-opus-4-5-20251101"),
-      /** Memory management, search - high context (Sonnet 4.5, 1M beta) */
-      workhorse: z.string().default("claude-sonnet-4-5-20250929"),
-      /** Quick classifications - fast response (Haiku 4.5, 200k context) */
-      fast: z.string().default("claude-haiku-4-5-20251001"),
+      /** Main agent, LTM reflection - best judgment */
+      reasoning: z.string().optional(),
+      /** Memory management, search - high context */
+      workhorse: z.string().optional(),
+      /** Quick classifications - fast response */
+      fast: z.string().optional(),
     }),
     db: z.string().default("./agent.db"),
     tokenBudgets: TokenBudgetSchema,
@@ -214,7 +214,7 @@ export namespace Config {
   /**
    * Get the model ID for a given tier.
    */
-  export function resolveModelTier(tier: ModelTier): string {
+  export function resolveModelTier(tier: ModelTier): string | undefined {
     const config = get();
     return config.models[tier];
   }
