@@ -146,9 +146,20 @@ export namespace Provider {
    * Get a language model for a given tier.
    */
   export function getModelForTier(tier: Config.ModelTier): LanguageModel {
-    const modelId = Config.resolveModelTier(tier)
+    const modelId = getModelIdForTier(tier)
     log.debug("resolving model tier", { tier, modelId })
     return getModel(modelId)
+  }
+
+  /**
+   * Get the configured model ID for a given tier.
+   * This routes through the active provider configuration.
+   */
+  export function getModelIdForTier(tier: Config.ModelTier): string {
+    const config = Config.get()
+    const modelId = config.models[tier]
+    log.debug("resolved model ID for tier", { tier, modelId, provider: config.provider })
+    return modelId
   }
 
   /**

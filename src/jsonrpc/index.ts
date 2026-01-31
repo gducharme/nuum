@@ -24,14 +24,14 @@ import {
   type ControlRequest,
 } from "./protocol"
 import { Log } from "../util/log"
-import { Config } from "../config"
+import { Provider } from "../provider"
 import { Mcp } from "../mcp"
 import { Identifier } from "../id"
 import { setEnvironment } from "../context/environment"
 
 // Get the model ID for the reasoning tier (main agent)
 function getModelId(): string {
-  return Config.resolveModelTier("reasoning")
+  return Provider.getModelIdForTier("reasoning")
 }
 
 const log = Log.create({ service: "server" })
