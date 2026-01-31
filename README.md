@@ -233,8 +233,12 @@ Reflection searches the full conversation history (via FTS5 full-text search) an
 ## Configuration
 
 ```bash
-# Required
+# Required (depends on provider)
+# - AGENT_PROVIDER=anthropic
 ANTHROPIC_API_KEY=your-key-here
+# - AGENT_PROVIDER=openai|codex|openai-compatible
+#   (use OPENAI_COMPATIBLE_API_KEY for openai-compatible hosts)
+OPENAI_API_KEY=sk-...
 
 # Optional (defaults shown)
 AGENT_PROVIDER=anthropic
@@ -245,7 +249,6 @@ AGENT_DB=./agent.db
 
 # Provider-specific overrides (optional)
 # OpenAI/Codex
-OPENAI_API_KEY=sk-...
 OPENAI_BASE_URL=https://api.openai.com/v1
 OPENAI_MODEL_REASONING=gpt-4o
 OPENAI_MODEL_WORKHORSE=gpt-4o-mini
