@@ -12,6 +12,7 @@
 
 import type { Storage } from "../storage"
 import type { TemporalMessage, LTMEntry } from "../storage/schema"
+import { Config } from "../config"
 import { Identifier } from "../id"
 import { Log } from "../util/log"
 import { runSubAgent } from "../sub-agent"
@@ -258,6 +259,8 @@ export async function runConsolidation(
 
   // Build tools with result tracking
   const { tools, getLastResult } = buildConsolidationTools(storage)
+  const tokenBudgets = Config.getTokenBudgetsForTier("workhorse")
+  const maxTokens = tokenBudgets.ltmConsolidateBudget ?? 2048
 
   // Run sub-agent
   const subAgentResult = await runSubAgent(storage, {
@@ -272,7 +275,7 @@ export async function runConsolidation(
     },
     tier: "workhorse",
     maxTurns: MAX_CONSOLIDATION_TURNS,
-    maxTokens: 2048,
+    maxTokens,
     onToolResult: (toolCallId) => {
       const toolResult = getLastResult(toolCallId)
       if (!toolResult) return

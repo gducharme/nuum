@@ -15,6 +15,7 @@
  */
 
 import type { Storage } from "../storage"
+import { Config } from "../config"
 import { activity } from "../util/activity-log"
 import { runSubAgent, type SubAgentResult } from "../sub-agent"
 import { buildReflectionTools } from "./tools"
@@ -74,6 +75,8 @@ export async function runReflection(
 
   // Build tools
   const { tools, getAnswer } = buildReflectionTools({ storage })
+  const tokenBudgets = Config.getTokenBudgetsForTier("workhorse")
+  const maxTokens = tokenBudgets.ltmReflectBudget ?? 4096
 
   // Run sub-agent
   const result: SubAgentResult<string | null> = await runSubAgent(storage, {
@@ -84,7 +87,7 @@ export async function runReflection(
     extractResult: getAnswer,
     tier: "workhorse",
     maxTurns: 20,
-    maxTokens: 4096,
+    maxTokens,
   })
 
   const answer = result.result ?? "Unable to find relevant information."
