@@ -213,10 +213,38 @@ export namespace Provider {
    */
   export function getModelIdForTier(tier: Config.ModelTier): string {
     const config = Config.get()
+    assertProviderModelIdConfigured(config, tier)
     const modelIds = getEffectiveModelIds(config)
     const modelId = modelIds[tier]
     log.debug("resolved model ID for tier", { tier, modelId, provider: config.provider })
     return modelId
+  }
+
+  function assertProviderModelIdConfigured(
+    config: Config.Config,
+    tier: Config.ModelTier,
+  ): void {
+    if (config.provider === "openai" || config.provider === "codex") {
+      const modelId = config.providers.openai.models[tier]
+      if (!modelId) {
+        const envVar = `OPENAI_MODEL_${tier.toUpperCase()}`
+        throw new Error(
+          `Missing OpenAI model ID for "${tier}" tier. ` +
+            `Set ${envVar} (or providers.openai.models.${tier}) when AGENT_PROVIDER is "${config.provider}".`,
+        )
+      }
+    }
+
+    if (config.provider === "openai-compatible") {
+      const modelId = config.providers.openaiCompatible.models[tier]
+      if (!modelId) {
+        const envVar = `OPENAI_COMPAT_MODEL_${tier.toUpperCase()}`
+        throw new Error(
+          `Missing OpenAI-compatible model ID for "${tier}" tier. ` +
+            `Set ${envVar} (or providers.openaiCompatible.models.${tier}) when AGENT_PROVIDER is "openai-compatible".`,
+        )
+      }
+    }
   }
 
   function getEffectiveModelIds(
